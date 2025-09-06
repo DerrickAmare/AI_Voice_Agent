@@ -1,0 +1,65 @@
+ ß<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice AI Resume Builder</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎤 Voice AI Resume Builder</h1>
+            <p>Transform your work experience into a professional resume through natural conversation</p>
+        </div>
+
+        <div class="main-content">
+            <div class="card">
+                <h2>🚀 Start Fresh</h2>
+                <p>Begin building your resume from scratch. Our AI will guide you through a conversation to capture all your work experience, skills, and achievements.</p>
+                <button class="btn" onclick="startNewConversation()">Start New Resume</button>
+            </div>
+
+            <div class="card">
+                <h2>📄 Upload Existing Resume</h2>
+                <p>Already have a partial resume? Upload it and we'll help you fill in the missing details through our intelligent conversation system.</p>
+                <input type="file" id="resumeFile" accept=".txt,.pdf" style="margin: 10px 0;">
+                <button class="btn" onclick="uploadResume()">Upload & Enhance</button>
+            </div>
+        </div>
+
+        <div class="features">
+            <div class="feature">
+                <h3>🎯 Smart Questions</h3>
+                <p>AI asks targeted questions to uncover hidden experience</p>
+            </div>
+            <div class="feature">
+                <h3>🗣️ Voice Interface</h3>
+                <p>Natural conversation through speech recognition</p>
+            </div>
+            <div class="feature">
+                <h3>📊 Professional Output</h3>
+                <p>Generate polished resumes in multiple formats</p>
+            </div>
+            <div class="feature">
+                <h3>🔍 Missing Details</h3>
+                <p>Identifies and fills gaps in work history</p>
+            </div>
+        </div>
+
+        <div class="conversation-area" id="conversationArea">
+            <h2>Conversation</h2>
+            <div class="voice-controls">
+                <button class="voice-btn listen-btn" id="listenBtn" onclick="toggleListening()">🎤</button>
+                <button class="voice-btn speak-btn" id="speakBtn" onclick="speakLastMessage()">🔊</button>
+            </div>
+            <div id="messages"></div>
+            <div class="input-area">
+                <input type="text" id="userInput" placeholder="Type your response here..." onkeypress="handleKeyPress(event)">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>
