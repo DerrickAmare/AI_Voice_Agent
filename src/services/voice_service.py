@@ -25,7 +25,7 @@ class VoiceService:
             # Calibrate microphone if available
             self._calibrate_microphone()
         except Exception as e:
-                
+            pass
         # Try to initialize TTS
         try:
             import pyttsx3
