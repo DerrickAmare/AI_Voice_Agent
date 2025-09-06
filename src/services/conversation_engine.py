@@ -1,5 +1,4 @@
 import re
-import logging
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, date
 from src.models.resume_models import (
@@ -7,7 +6,6 @@ from src.models.resume_models import (
     PersonalInfo, Skill, QuestionContext
 )
 
-logger = logging.getLogger(__name__)
 
 class ConversationEngine:
     def __init__(self):

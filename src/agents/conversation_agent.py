@@ -4,9 +4,7 @@ Conversation Agent - Handles natural conversation flow for resume building
 
 from typing import Dict, Any
 from .base_agent import BaseAgent, AgentResponse
-import logging
 
-logger = logging.getLogger(__name__)
 
 class ConversationAgent(BaseAgent):
     """Agent responsible for natural conversation flow and information gathering"""
@@ -93,8 +91,7 @@ Remember: Your goal is to help them create a compelling resume by drawing out th
             )
             
         except Exception as e:
-            logger.error(f"ConversationAgent error: {e}")
-            return AgentResponse(
+                return AgentResponse(
                 success=False,
                 message="I apologize, but I encountered an error. Let's continue with your resume.",
                 confidence=0.0
@@ -184,5 +181,4 @@ Only include fields where you found clear information. Return empty object {{}} 
                 
             return extracted
         except Exception as e:
-            logger.error(f"Information extraction error: {e}")
-            return {}
+                return {}

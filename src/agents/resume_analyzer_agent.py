@@ -4,9 +4,7 @@ Resume Analyzer Agent - Analyzes resume content for gaps and improvements
 
 from typing import Dict, Any, List
 from .base_agent import BaseAgent, AgentResponse
-import logging
 
-logger = logging.getLogger(__name__)
 
 class ResumeAnalyzerAgent(BaseAgent):
     """Agent responsible for analyzing resume content and identifying gaps"""
@@ -78,8 +76,7 @@ Your analysis should be thorough, specific, and immediately actionable."""
             )
             
         except Exception as e:
-            logger.error(f"ResumeAnalyzerAgent error: {e}")
-            return AgentResponse(
+                return AgentResponse(
                 success=False,
                 message="Analysis encountered an error. Please try again.",
                 confidence=0.0

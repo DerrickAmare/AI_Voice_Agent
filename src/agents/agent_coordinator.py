@@ -3,14 +3,12 @@ Agent Coordinator - Orchestrates the multi-agent resume building system
 """
 
 from typing import Dict, Any, List, Optional
-import logging
 from .base_agent import AgentResponse
 from .conversation_agent import ConversationAgent
 from .resume_analyzer_agent import ResumeAnalyzerAgent
 from .content_optimizer_agent import ContentOptimizerAgent
 from .formatting_agent import FormattingAgent
 
-logger = logging.getLogger(__name__)
 
 class AgentCoordinator:
     """Coordinates the multi-agent resume building system"""
@@ -60,8 +58,7 @@ class AgentCoordinator:
             )
             
         except Exception as e:
-            logger.error(f"Error starting new session: {e}")
-            return AgentResponse(
+                return AgentResponse(
                 success=False,
                 message="Failed to start new session. Please try again.",
                 confidence=0.0
@@ -99,8 +96,7 @@ class AgentCoordinator:
             return response
             
         except Exception as e:
-            logger.error(f"Error continuing conversation: {e}")
-            return AgentResponse(
+                return AgentResponse(
                 success=False,
                 message="Error processing your input. Please try again.",
                 confidence=0.0
@@ -127,8 +123,7 @@ class AgentCoordinator:
                 return analysis_response
                 
         except Exception as e:
-            logger.error(f"Error in analysis transition: {e}")
-            return AgentResponse(
+                return AgentResponse(
                 success=False,
                 message="Error analyzing resume. Please try again.",
                 confidence=0.0
@@ -166,8 +161,7 @@ class AgentCoordinator:
                 return optimization_response
                 
         except Exception as e:
-            logger.error(f"Error in optimization transition: {e}")
-            return AgentResponse(
+                return AgentResponse(
                 success=False,
                 message="Error optimizing resume content. Please try again.",
                 confidence=0.0
@@ -213,8 +207,7 @@ class AgentCoordinator:
                 return formatting_response
                 
         except Exception as e:
-            logger.error(f"Error formatting resume: {e}")
-            return AgentResponse(
+                return AgentResponse(
                 success=False,
                 message="Error formatting resume. Please try again.",
                 confidence=0.0

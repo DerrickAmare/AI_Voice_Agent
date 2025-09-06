@@ -1,10 +1,8 @@
 import re
-import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, date
 from src.models.resume_models import Resume, WorkExperience, Education, PersonalInfo, Skill
 
-logger = logging.getLogger(__name__)
 
 class ResumeParser:
     def __init__(self):
@@ -54,7 +52,6 @@ class ResumeParser:
         """Parse a PDF resume (placeholder for PDF parsing)"""
         # This would require additional libraries like PyPDF2 or pdfplumber
         # For now, return empty resume
-        logger.warning("PDF parsing not implemented yet")
         return Resume()
     
     def _clean_text(self, text: str) -> str:

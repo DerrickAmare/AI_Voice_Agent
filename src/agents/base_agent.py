@@ -2,7 +2,6 @@
 Base Agent Class for AI Resume Builder
 """
 
-import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
@@ -12,7 +11,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentResponse:
@@ -53,15 +51,12 @@ class BaseAgent(ABC):
                     messages=[{'role': 'user', 'content': 'test'}],
                     max_tokens=1
                 )
-                logger.info(f'{self.name}: OpenAI client initialized successfully')
-                
+                        
             except Exception as e:
-                logger.error(f'{self.name}: OpenAI client initialization failed: {e}')
-                self.client = None
+                        self.client = None
         else:
             self.client = None
-            logger.warning(f'{self.name}: OpenAI API key not configured. Agent will use fallback responses.')
-        self.conversation_history = []
+            self.conversation_history = []
         
     def add_to_history(self, role: str, content: str):
         """Add message to conversation history"""
@@ -89,8 +84,7 @@ class BaseAgent(ABC):
             )
             return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"OpenAI API error in {self.name}: {e}")
-            return self._get_fallback_response(user_input)
+                return self._get_fallback_response(user_input)
     
     def _get_fallback_response(self, user_input: str) -> str:
         """Get fallback response when OpenAI is not available"""

@@ -1,4 +1,3 @@
-import logging
 import os
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse
@@ -17,8 +16,6 @@ from src.services.agent_service import AgentService
 from src.models.resume_models import Resume
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Voice AI Resume Builder", version="1.0.0")
 
@@ -87,7 +84,6 @@ async def start_conversation(request: Dict[str, str]):
         
         return {"session_id": session_id, "response": response, "is_complete": False}
     except Exception as e:
-        logger.error(f"Error starting conversation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/conversation/continue")
@@ -118,7 +114,6 @@ async def continue_conversation(request: ConversationRequest):
         
         return result
     except Exception as e:
-        logger.error(f"Error continuing conversation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/resume/upload")
@@ -155,7 +150,6 @@ async def upload_resume(file: UploadFile = File(...)):
             "message": response
         }
     except Exception as e:
-        logger.error(f"Error uploading resume: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/voice/speak")
@@ -165,7 +159,6 @@ async def speak_text(request: VoiceRequest):
         voice_service.speak_async(request.text)
         return {"session_id": request.session_id, "success": True, "message": "Speaking"}
     except Exception as e:
-        logger.error(f"Error with TTS: {e}")
         return {"session_id": request.session_id, "success": False, "message": str(e)}
 
 @app.post("/api/voice/start-listening")
@@ -175,7 +168,6 @@ async def start_listening(request: VoiceSessionRequest):
         # In a real implementation, you would handle voice input here
         return {"session_id": request.session_id, "success": True, "message": "Listening started"}
     except Exception as e:
-        logger.error(f"Error starting listening: {e}")
         return {"session_id": request.session_id, "success": False, "message": str(e)}
 
 @app.post("/api/voice/stop-listening")
@@ -185,7 +177,6 @@ async def stop_listening(request: VoiceSessionRequest):
         # In a real implementation, you would handle stopping voice input here
         return {"session_id": request.session_id, "success": True, "message": "Listening stopped"}
     except Exception as e:
-        logger.error(f"Error stopping listening: {e}")
         return {"session_id": request.session_id, "success": False, "message": str(e)}
 
 @app.get("/api/resume/download/{format}")
@@ -215,7 +206,6 @@ async def download_resume(format: str, session_id: str):
         else:
             raise HTTPException(status_code=400, detail="Invalid format")
     except Exception as e:
-        logger.error(f"Error downloading resume: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/health")
@@ -241,7 +231,6 @@ async def start_agent_conversation(request: Dict[str, str]):
         result = agent_service.start_conversation(session_id, target_role, industry)
         return result
     except Exception as e:
-        logger.error(f"Error starting agent conversation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/agents/continue")
@@ -254,7 +243,6 @@ async def continue_agent_conversation(request: ConversationRequest):
         result = agent_service.continue_conversation(session_id, user_input)
         return result
     except Exception as e:
-        logger.error(f"Error continuing agent conversation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/agents/format")
@@ -270,7 +258,6 @@ async def format_resume_with_agents(request: Dict[str, str]):
         result = agent_service.format_resume(session_id, output_format)
         return result
     except Exception as e:
-        logger.error(f"Error formatting resume with agents: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/agents/status/{session_id}")
@@ -280,7 +267,6 @@ async def get_agent_session_status(session_id: str):
         result = agent_service.get_session_status(session_id)
         return result
     except Exception as e:
-        logger.error(f"Error getting agent session status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/agents/info")
@@ -290,7 +276,6 @@ async def get_agent_info():
         result = agent_service.get_available_agents()
         return result
     except Exception as e:
-        logger.error(f"Error getting agent info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/agents/session/{session_id}")
@@ -300,7 +285,6 @@ async def reset_agent_session(session_id: str):
         result = agent_service.reset_session(session_id)
         return result
     except Exception as e:
-        logger.error(f"Error resetting agent session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 if __name__ == "__main__":
     import uvicorn

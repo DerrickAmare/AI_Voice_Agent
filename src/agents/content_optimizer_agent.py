@@ -4,9 +4,7 @@ Content Optimizer Agent - Optimizes resume content for maximum impact
 
 from typing import Dict, Any, List
 from .base_agent import BaseAgent, AgentResponse
-import logging
 
-logger = logging.getLogger(__name__)
 
 class ContentOptimizerAgent(BaseAgent):
     """Agent responsible for optimizing resume content for maximum impact"""
@@ -82,8 +80,7 @@ stands out to both ATS systems and human recruiters."""
             )
             
         except Exception as e:
-            logger.error(f"ContentOptimizerAgent error: {e}")
-            return AgentResponse(
+                return AgentResponse(
                 success=False,
                 message="Content optimization encountered an error. Please try again.",
                 confidence=0.0

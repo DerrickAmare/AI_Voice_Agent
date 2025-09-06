@@ -2,12 +2,10 @@
 Agent Service - Integrates the multi-agent system with the existing application
 """
 
-import logging
 from typing import Dict, Any, Optional
 from ..agents.agent_coordinator import AgentCoordinator
 from ..agents.base_agent import AgentResponse
 
-logger = logging.getLogger(__name__)
 
 class AgentService:
     """Service that integrates the multi-agent system with the existing application"""
@@ -45,8 +43,7 @@ class AgentService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error starting agent conversation: {e}")
-            return {
+                return {
                 "success": False,
                 "message": "Error starting conversation. Please try again.",
                 "error": str(e)
@@ -87,8 +84,7 @@ class AgentService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error continuing agent conversation: {e}")
-            return {
+                return {
                 "success": False,
                 "message": "Error processing your input. Please try again.",
                 "error": str(e)
@@ -123,8 +119,7 @@ class AgentService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error formatting resume with agents: {e}")
-            return {
+                return {
                 "success": False,
                 "message": "Error formatting resume. Please try again.",
                 "error": str(e)
@@ -148,8 +143,7 @@ class AgentService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting session status: {e}")
-            return {
+                return {
                 "success": False,
                 "message": "Error getting session status",
                 "error": str(e)
@@ -183,8 +177,7 @@ class AgentService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error resetting session: {e}")
-            return {
+                return {
                 "success": False,
                 "message": "Error resetting session",
                 "error": str(e)
@@ -202,8 +195,7 @@ class AgentService:
             }
             
         except Exception as e:
-            logger.error(f"Error getting available agents: {e}")
-            return {
+                return {
                 "success": False,
                 "message": "Error getting agent information",
                 "error": str(e)

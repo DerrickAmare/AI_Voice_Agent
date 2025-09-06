@@ -4,9 +4,7 @@ Formatting Agent - Handles resume formatting and structure optimization
 
 from typing import Dict, Any, List
 from .base_agent import BaseAgent, AgentResponse
-import logging
 
-logger = logging.getLogger(__name__)
 
 class FormattingAgent(BaseAgent):
     """Agent responsible for resume formatting and structure optimization"""
@@ -74,8 +72,7 @@ Your goal is to create resumes that look professional, are easy to read, and pas
             )
             
         except Exception as e:
-            logger.error(f"FormattingAgent error: {e}")
-            return AgentResponse(
+                return AgentResponse(
                 success=False,
                 message="Formatting encountered an error. Please try again.",
                 confidence=0.0

@@ -1,10 +1,8 @@
-import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 from src.models.resume_models import Resume, WorkExperience, Education, PersonalInfo, Skill
 from jinja2 import Template
 
-logger = logging.getLogger(__name__)
 
 class ResumeBuilder:
     def __init__(self):
@@ -298,11 +296,9 @@ SKILLS
             return True
             
         except ImportError:
-            logger.error("WeasyPrint not available for PDF generation")
-            return False
+                return False
         except Exception as e:
-            logger.error(f"Error generating PDF: {e}")
-            return False
+                return False
     
     def enhance_resume(self, resume: Resume) -> Resume:
         """Enhance resume with additional formatting and content"""
