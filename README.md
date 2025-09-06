@@ -1,267 +1,366 @@
-# Voice AI Resume Builder
+# AI Voice Agent - High-Volume Outbound Calling System
 
-A sophisticated AI-powered resume building application that combines voice interaction with intelligent multi-agent systems to create professional, ATS-optimized resumes.
+A Redis-based, high-volume outbound calling system designed for scalability and reliability. This system can handle 10,000-100,000+ calls with adversarial user detection, employment gap analysis, and real-time webhook delivery.
 
-## 🚀 Features
+## 🏗️ Architecture Overview
 
-### Core Functionality
-- **Voice Interaction**: Natural conversation through speech recognition and text-to-speech
-- **Multi-Agent System**: Specialized AI agents for different aspects of resume building
-- **Real-time Processing**: Live conversation and resume generation
-- **Multiple Output Formats**: HTML, PDF, Word, Text, and JSON formats
-- **ATS Optimization**: Ensures resumes pass Applicant Tracking Systems
+### Redis-First Design
+- **Redis** as the core state management system
+- **Object Storage** (S3/compatible) for durable data
+- **Webhook Delivery** with retry logic and exponential backoff
+- **No Database Dependencies** - fully stateless and scalable
 
-### AI Agents
-1. **ConversationAgent**: Career counselor that guides users through natural conversation
-2. **ResumeAnalyzerAgent**: Analyzes resume content for gaps and improvements
-3. **ContentOptimizerAgent**: Optimizes content for maximum impact
-4. **FormattingAgent**: Handles professional formatting and structure
-
-## 🏗️ Architecture
-
+### Data Flow
 ```
-demo-va/
-├── src/
-│   ├── agents/              # AI Agent System
-│   │   ├── base_agent.py    # Base agent class
-│   │   ├── conversation_agent.py
-│   │   ├── resume_analyzer_agent.py
-│   │   ├── content_optimizer_agent.py
-│   │   ├── formatting_agent.py
-│   │   └── agent_coordinator.py
-│   ├── services/            # Core Services
-│   │   ├── voice_service.py
-│   │   ├── conversation_engine.py
-│   │   ├── resume_parser.py
-│   │   ├── resume_builder.py
-│   │   └── agent_service.py
-│   ├── models/              # Data Models
-│   │   └── resume_models.py
-│   └── utils/               # Utilities
-├── examples/                # Example files
-├── main.py                  # FastAPI application
-├── requirements.txt         # Python dependencies
-└── .env.example            # Environment configuration
+UI → Phone Input → Redis State → Twilio Call → AI Agent → Profile Extraction → Object Storage + Webhook
 ```
 
-## 🤖 AI Agent System
+## 🚀 Key Features
 
-### Agent Architecture
+### Core Capabilities
+- **High-Volume Calling**: Handle 10K-100K+ concurrent calls
+- **Adversarial Detection**: 0-10 scale scoring of difficult users
+- **Employment Gap Analysis**: Detect and fill timeline gaps (e.g., 1977-2004)
+- **Real-time State Management**: Redis-based ephemeral state with TTL
+- **Reliable Webhook Delivery**: Exponential backoff with retry logic
+- **Comprehensive Observability**: Prometheus metrics and structured logging
 
-#### 🤖 **ConversationAgent**
-- **Role**: Career Counselor & Resume Expert
-- **Purpose**: Guides users through natural conversation to gather resume information
-- **Features**:
-  - Warm, encouraging conversation style
-  - One focused question at a time
-  - Digs deeper to uncover hidden achievements
-  - Helps users articulate quantifiable results
-  - Identifies transferable skills
+### Technical Features
+- **Rate Limiting**: Prevent spam and abuse
+- **Audit Logging**: Compliance-ready call logging
+- **Object Storage**: Durable storage for audio, transcripts, and profiles
+- **Health Monitoring**: Real-time system health checks
+- **Auto-cleanup**: TTL-based data expiration
 
-#### �� **ResumeAnalyzerAgent**
-- **Role**: Resume Analysis Expert
-- **Purpose**: Analyzes resume content for gaps and improvements
-- **Features**:
-  - ATS optimization analysis
-  - Industry-specific keyword suggestions
-  - Content gap identification
-  - Achievement quantification opportunities
-  - Competitive positioning analysis
+## 📋 Prerequisites
 
-#### ✨ **ContentOptimizerAgent**
-- **Role**: Resume Content Strategist
-- **Purpose**: Optimizes resume content for maximum impact
-- **Features**:
-  - Action verb optimization
-  - Quantifiable achievement enhancement
-  - ATS keyword integration
-  - Impact statement creation
-  - Industry-specific language adaptation
-
-#### 📄 **FormattingAgent**
-- **Role**: Resume Formatting Specialist
-- **Purpose**: Handles resume formatting and structure optimization
-- **Features**:
-  - ATS-compatible formatting
-  - Multiple output formats (HTML, PDF, Word, Text, JSON)
-  - Visual hierarchy optimization
-  - Print and digital optimization
+- **Python 3.9+**
+- **Redis 6+**
+- **AWS S3** (or S3-compatible storage)
+- **Twilio Account** with phone number
+- **OpenAI API** access
 
 ## 🛠️ Installation
 
-### Prerequisites
-- Python 3.9+
-- macOS (for voice features)
-- OpenAI API key (for AI agents)
-
-### Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd demo-va
-   ```
-
-2. **Create virtual environment**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your OpenAI API key
-   ```
-
-5. **Install audio dependencies (macOS)**
-   ```bash
-   # Install Homebrew if not already installed
-   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-   
-   # Install PortAudio
-   brew install portaudio
-   
-   # Reinstall PyAudio
-   pip uninstall pyaudio
-   pip install pyaudio
-   ```
-
-## 🚀 Usage
-
-### Start the Application
+### 1. Clone and Setup
 ```bash
-source venv/bin/activate
+git clone https://github.com/DerrickAmare/AI_Voice_Agent
+cd AI_Voice_Agent
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Install Redis
+**macOS:**
+```bash
+brew install redis
+brew services start redis
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install redis-server
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+```
+
+### 3. Configure Environment
+```bash
+cp .env.example .env
+# Edit .env with your credentials
+```
+
+### Required Environment Variables
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `OPENAI_API_KEY` | OpenAI API key for conversation AI | Yes |
+| `TWILIO_ACCOUNT_SID` | Twilio account SID | Yes |
+| `TWILIO_AUTH_TOKEN` | Twilio authentication token | Yes |
+| `TWILIO_PHONE_NUMBER` | Twilio phone number for calls | Yes |
+| `REDIS_URL` | Redis connection URL | Yes |
+| `S3_BUCKET_NAME` | S3 bucket for object storage | Yes |
+| `AWS_ACCESS_KEY_ID` | AWS access key | Yes |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key | Yes |
+| `DEFAULT_WEBHOOK_URL` | Webhook URL for profile delivery | Optional |
+
+## 🏃‍♂️ Quick Start
+
+### 1. Start the System
+```bash
+# Ensure Redis is running
+redis-cli ping  # Should return "PONG"
+
+# Start the application
 python main.py
 ```
 
-The application will be available at `http://localhost:8000`
+### 2. Test the System
+```bash
+# Run comprehensive tests
+python test_redis_system.py
 
-### API Endpoints
+# Test individual components
+python -c "
+import asyncio
+from src.services.redis_state_service import RedisStateService
+redis = RedisStateService()
+print('Redis Health:', redis.health_check())
+"
+```
 
-#### Traditional Resume Building
-- `POST /api/conversation` - Start/continue conversation
-- `POST /api/resume/generate` - Generate resume
-- `GET /api/resume/{session_id}` - Get resume data
+### 3. Make a Test Call
+```bash
+curl -X POST "http://localhost:8000/api/calls/initiate" \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+16154846056"}'
+```
 
-#### AI Agent System
-- `POST /api/agents/start` - Start agent conversation
-- `POST /api/agents/continue` - Continue agent conversation
-- `POST /api/agents/format` - Format resume with agents
-- `GET /api/agents/status/{session_id}` - Get session status
-- `GET /api/agents/info` - Get agent information
+## 📊 API Endpoints
 
-#### Voice Features
-- `POST /api/voice/speak` - Text-to-speech
-- `POST /api/voice/start-listening` - Start voice recognition
-- `POST /api/voice/stop-listening` - Stop voice recognition
+### Core Endpoints
+- `POST /api/calls/initiate` - Initiate outbound call
+- `GET /api/calls/status/{call_id}` - Get call status
+- `POST /api/calls/webhook/{call_id}` - Twilio webhook handler
 
-### Example Usage
+### Monitoring Endpoints
+- `GET /health` - System health check
+- `GET /metrics` - Prometheus metrics
+- `GET /api/analytics` - Call analytics
+- `GET /api/system/stats` - Detailed system statistics
 
-#### Using the Agent System
+### Example API Usage
 ```python
 import requests
 
-# Start agent conversation
-response = requests.post('http://localhost:8000/api/agents/start', json={
-    'session_id': 'user_123',
-    'target_role': 'Data Scientist',
-    'industry': 'Technology'
+# Initiate a call
+response = requests.post("http://localhost:8000/api/calls/initiate", json={
+    "phone_number": "+15551234567",
+    "webhook_url": "https://your-webhook.com/profiles"
 })
 
-# Continue conversation
-response = requests.post('http://localhost:8000/api/agents/continue', json={
-    'session_id': 'user_123',
-    'user_input': 'I have 5 years of experience in machine learning'
-})
+call_data = response.json()
+call_id = call_data["call_id"]
 
-# Format resume
-response = requests.post('http://localhost:8000/api/agents/format', json={
-    'session_id': 'user_123',
-    'format': 'html'
-})
+# Check call status
+status = requests.get(f"http://localhost:8000/api/calls/status/{call_id}")
+print(status.json())
+```
+
+## 🏗️ System Components
+
+### Redis State Service
+- **Call Sessions**: `CALL_SESSION:{call_id}` (TTL: 48h)
+- **Rate Limiting**: `RATE_LIMIT:{phone_hash}` (TTL: 24h)
+- **Outbox Queue**: `OUTBOX:{event_id}` (TTL: 7 days)
+
+### Object Storage Structure
+```
+s3://bucket/
+├── calls/
+│   ├── audio/{date}/{call_id}/recording.wav
+│   ├── transcripts/{date}/{call_id}/transcript.json
+│   └── profiles/{date}/{call_id}/worker_profile.json
+└── audit/{date}/audit_{timestamp}_{id}.json
+```
+
+### Webhook Payload Format
+```json
+{
+  "event_type": "worker_profile_completed",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "call_id": "call_abc123",
+  "profile": {
+    "phone_hash": "a1b2c3d4",
+    "name": "John Smith",
+    "current_job": {"title": "Engineer", "company": "Tech Corp"},
+    "employment_history": [...],
+    "employment_gaps": [...],
+    "skills": ["Python", "JavaScript"],
+    "adversarial_score": 2.5,
+    "confidence_score": 0.85,
+    "consent_given": true
+  }
+}
+```
+
+## 📈 Monitoring and Observability
+
+### Prometheus Metrics
+- `calls_started_total` - Total calls initiated
+- `calls_completed_total` - Total calls completed
+- `call_duration_seconds` - Call duration histogram
+- `webhook_deliveries_total` - Webhook delivery attempts
+- `active_call_sessions` - Current active sessions
+- `outbox_queue_size` - Pending webhook deliveries
+
+### Health Checks
+```bash
+# System health
+curl http://localhost:8000/health
+
+# Detailed metrics
+curl http://localhost:8000/metrics
+
+# Analytics dashboard
+curl http://localhost:8000/api/analytics
+```
+
+### Structured Logging
+All logs are in JSON format with structured fields:
+```json
+{
+  "timestamp": "2024-01-15T10:30:00Z",
+  "level": "info",
+  "service": "redis_state",
+  "call_id": "call_abc123",
+  "phone_hash": "a1b2c3d4",
+  "message": "Call session created"
+}
 ```
 
 ## 🔧 Configuration
 
-### Environment Variables
-```env
-# OpenAI API Configuration
-OPENAI_API_KEY=your_openai_api_key_here
-AGENT_TEMPERATURE=0.7
-AGENT_MAX_TOKENS=1000
-AGENT_MODEL=gpt-4
+### Redis Configuration
+```bash
+# Default Redis settings work for development
+# For production, consider:
+redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru
 ```
 
-### Agent Customization
-Each agent can be customized by modifying their system prompts in the respective agent files:
-- `src/agents/conversation_agent.py`
-- `src/agents/resume_analyzer_agent.py`
-- `src/agents/content_optimizer_agent.py`
-- `src/agents/formatting_agent.py`
-
-## 🧪 Testing
-
+### Object Storage Configuration
 ```bash
-# Run basic health check
-curl http://localhost:8000/api/health
+# AWS S3 (default)
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=ai-voice-agent-prod
 
-# Test agent system
-curl http://localhost:8000/api/agents/info
-
-# Test voice service
-curl http://localhost:8000/api/voice/status
+# S3-compatible (MinIO, DigitalOcean Spaces, etc.)
+S3_ENDPOINT_URL=https://nyc3.digitaloceanspaces.com
 ```
 
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **Python command not found**
-   - Use `python3` instead of `python` on macOS
-
-2. **Audio dependencies missing**
-   - Install PortAudio: `brew install portaudio`
-   - Reinstall PyAudio: `pip uninstall pyaudio && pip install pyaudio`
-
-3. **OpenAI API errors**
-   - Ensure API key is set in `.env` file
-   - Check API quota and rate limits
-
-4. **Agent endpoints not found**
-   - Restart the application
-   - Check that agent endpoints are properly registered
-
-### Debug Mode
+### Webhook Configuration
 ```bash
-# Enable debug logging
-export PYTHONPATH=.
-python -c "import logging; logging.basicConfig(level=logging.DEBUG)"
-python main.py
+# Retry settings
+WEBHOOK_TIMEOUT=30
+WEBHOOK_MAX_RETRIES=5
+
+# Delivery endpoint
+DEFAULT_WEBHOOK_URL=https://your-api.com/worker-profiles
 ```
 
 ## 🚀 Deployment
 
-### Production Setup
-1. Set up proper environment variables
-2. Configure reverse proxy (nginx)
-3. Use production ASGI server (gunicorn)
-4. Set up monitoring and logging
-
-### Docker (Optional)
+### Docker Deployment
 ```dockerfile
 FROM python:3.9-slim
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
+
 COPY . .
 EXPOSE 8000
+
 CMD ["python", "main.py"]
+```
+
+### Environment-Specific Settings
+```bash
+# Development
+ENVIRONMENT=development
+LOG_LEVEL=DEBUG
+REDIS_URL=redis://localhost:6379
+
+# Production
+ENVIRONMENT=production
+LOG_LEVEL=INFO
+REDIS_URL=redis://redis-cluster:6379
+BASE_URL=https://your-domain.com
+```
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+**Redis Connection Failed**
+```bash
+# Check Redis status
+redis-cli ping
+sudo systemctl status redis-server
+
+# Check connection
+telnet localhost 6379
+```
+
+**Object Storage Issues**
+```bash
+# Test AWS credentials
+aws s3 ls s3://your-bucket-name
+
+# Check bucket permissions
+aws s3api get-bucket-policy --bucket your-bucket-name
+```
+
+**Webhook Delivery Failures**
+```bash
+# Check outbox queue
+curl http://localhost:8000/api/system/stats | jq '.webhook_stats'
+
+# Test webhook endpoint
+curl -X POST https://your-webhook.com/test -d '{"test": true}'
+```
+
+### Performance Tuning
+
+**Redis Optimization**
+```bash
+# Memory optimization
+redis-cli CONFIG SET maxmemory-policy allkeys-lru
+redis-cli CONFIG SET maxmemory 4gb
+
+# Connection pooling
+REDIS_URL=redis://localhost:6379?max_connections=100
+```
+
+**Webhook Processing**
+```bash
+# Increase batch size for high volume
+WEBHOOK_BATCH_SIZE=50
+WEBHOOK_PROCESS_INTERVAL=10
+```
+
+## 📝 Development
+
+### Running Tests
+```bash
+# Full test suite
+python test_redis_system.py
+
+# Individual service tests
+python -m pytest tests/ -v
+
+# Load testing
+python scripts/load_test.py --calls 1000
+```
+
+### Code Structure
+```
+src/
+├── services/
+│   ├── redis_state_service.py      # Core state management
+│   ├── object_storage_service.py   # S3/storage operations
+│   ├── webhook_service.py          # Reliable delivery
+│   ├── observability_service.py    # Metrics and monitoring
+│   └── telephony_service.py        # Twilio integration
+├── agents/
+│   └── phone_conversation_agent.py # AI conversation logic
+└── models/
+    └── resume_models.py            # Data models
 ```
 
 ## 🤝 Contributing
@@ -269,7 +368,7 @@ CMD ["python", "main.py"]
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests if applicable
+4. Add tests
 5. Submit a pull request
 
 ## 📄 License
@@ -278,18 +377,12 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🙏 Acknowledgments
 
-- OpenAI for GPT-4 API
-- FastAPI for the web framework
-- SpeechRecognition and pyttsx3 for voice features
+- **Twilio** for telephony infrastructure
+- **OpenAI** for conversation AI
+- **Redis** for high-performance state management
+- **FastAPI** for the web framework
 - All contributors and users
-
-## 📞 Support
-
-For support and questions:
-- Create an issue in the repository
-- Check the documentation
-- Review the troubleshooting section
 
 ---
 
-**Note**: This application requires an OpenAI API key for full functionality. Without it, the agents will operate in demo mode with limited capabilities.
+**Ready for high-volume outbound calling with Redis-based architecture! 🚀**
