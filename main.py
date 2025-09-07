@@ -15,8 +15,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import structlog
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, File, UploadFile, Form
+from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import phonenumbers
@@ -30,7 +30,9 @@ from src.services.object_storage_service import (
 from src.services.webhook_service import WebhookService, WebhookConfig
 from src.services.observability_service import ObservabilityService
 from src.services.telephony_service import TelephonyService
-from src.agents.phone_conversation_agent import PhoneConversationAgent
+from src.agents.ai_conversation_manager import AIConversationManager
+from src.agents.resume_analyzer_agent import ResumeAnalyzerAgent
+from src.services.resume_builder import ResumeBuilder
 
 # Configure structured logging
 structlog.configure(
@@ -59,7 +61,9 @@ storage_service: ObjectStorageService = None
 webhook_service: WebhookService = None
 observability_service: ObservabilityService = None
 telephony_service: TelephonyService = None
-phone_agent: PhoneConversationAgent = None
+phone_agent: AIConversationManager = None
+resume_analyzer: ResumeAnalyzerAgent = None
+resume_builder: ResumeBuilder = None
 
 # Background task for webhook processing
 webhook_processor_task: Optional[asyncio.Task] = None
@@ -68,7 +72,7 @@ webhook_processor_task: Optional[asyncio.Task] = None
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     global redis_service, storage_service, webhook_service, observability_service
-    global telephony_service, phone_agent, webhook_processor_task
+    global telephony_service, phone_agent, resume_analyzer, resume_builder, webhook_processor_task
     
     logger.info("Starting AI Voice Agent system")
     
@@ -124,9 +128,17 @@ async def lifespan(app: FastAPI):
         )
         logger.info("Telephony service initialized")
         
-        # Initialize phone conversation agent
-        phone_agent = PhoneConversationAgent()
-        logger.info("Phone conversation agent initialized")
+        # Initialize AI conversation manager
+        phone_agent = AIConversationManager()
+        logger.info("AI conversation manager initialized")
+        
+        # Initialize resume analyzer agent
+        resume_analyzer = ResumeAnalyzerAgent()
+        logger.info("Resume analyzer agent initialized")
+        
+        # Initialize resume builder
+        resume_builder = ResumeBuilder()
+        logger.info("Resume builder initialized")
         
         # Start background webhook processor
         webhook_processor_task = asyncio.create_task(webhook_processor())
@@ -236,6 +248,12 @@ app = FastAPI(
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Serve React frontend (if built)
+try:
+    app.mount("/assets", StaticFiles(directory="client/dist/assets"), name="assets")
+except:
+    logger.warning("React build assets not found - client app may not be built")
+
 # Request/Response Models
 class InitiateCallRequest(BaseModel):
     phone_number: str
@@ -257,7 +275,7 @@ class CallStatusResponse(BaseModel):
 async def root():
     """Serve the main UI"""
     try:
-        with open("static/index.html", "r") as f:
+        with open("client/dist/index.html", "r") as f:
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse("""
@@ -438,7 +456,7 @@ async def handle_speech_input(call_id: str, request: Request):
             "user_input": speech_result,
             "call_metadata": {
                 "call_id": call_id,
-                "conversation_state": session.conversation_state
+                "conversation_state": session.conversation_state or {}
             }
         }
         
@@ -491,26 +509,36 @@ async def process_call_completion(call_id: str, call_status: str):
         
         logger.info("Processing call completion", call_id=call_id, status=call_status)
         
+        # Get linked resume request if exists
+        request_id = getattr(session, 'request_id', None)
+        request_data = None
+        if request_id:
+            request_data = redis_service.get_resume_request(request_id)
+        
         if call_status == "completed" and session.extracted_fields:
-            # Create worker profile
-            profile = WorkerProfile(
-                phone_hash=session.phone_hash,
-                call_id=call_id,
-                extracted_at=datetime.now(),
-                adversarial_score=session.adversarial_score,
-                confidence_score=0.8,  # Calculate based on extraction quality
-                consent_given=session.consent_given,
-                data_retention_until=datetime.now() + timedelta(days=30),
-                **session.extracted_fields
-            )
-            
-            # Store profile in object storage
-            storage_service.store_worker_profile(profile)
-            
-            # Queue for webhook delivery if webhook URL provided
-            webhook_url = os.getenv("DEFAULT_WEBHOOK_URL")
-            if webhook_url:
-                webhook_service.queue_for_delivery(call_id, webhook_url, profile)
+            # If this is linked to a resume request, generate final resume
+            if request_data:
+                await complete_resume_generation(call_id, request_id, session, request_data)
+            else:
+                # Original worker profile creation for non-resume calls
+                profile = WorkerProfile(
+                    phone_hash=session.phone_hash,
+                    call_id=call_id,
+                    extracted_at=datetime.now(),
+                    adversarial_score=session.adversarial_score,
+                    confidence_score=0.8,
+                    consent_given=session.consent_given,
+                    data_retention_until=datetime.now() + timedelta(days=30),
+                    **session.extracted_fields
+                )
+                
+                # Store profile in object storage
+                storage_service.store_worker_profile(profile)
+                
+                # Queue for webhook delivery if webhook URL provided
+                webhook_url = os.getenv("DEFAULT_WEBHOOK_URL")
+                if webhook_url:
+                    webhook_service.queue_for_delivery(call_id, webhook_url, profile)
             
             # Record metrics
             observability_service.record_call_completed(
@@ -523,6 +551,10 @@ async def process_call_completion(call_id: str, call_status: str):
         else:
             # Record failed call
             observability_service.record_call_failed(call_id, call_status)
+            
+            # Update resume request status if linked
+            if request_data:
+                redis_service.update_resume_request(request_id, {"status": "failed"})
         
         # Write completion audit log
         audit_entry = AuditLogEntry(
@@ -535,11 +567,243 @@ async def process_call_completion(call_id: str, call_status: str):
         )
         storage_service.write_audit_log(audit_entry)
         
-        # Clean up session after some time (keep for debugging)
-        # Could implement TTL extension here if needed
-        
     except Exception as e:
         logger.error("Error processing call completion", call_id=call_id, error=str(e))
+
+async def complete_resume_generation(call_id: str, request_id: str, session: CallSession, request_data: Dict[str, Any]):
+    """Generate final resume from call data and uploaded resume"""
+    try:
+        logger.info("Generating final resume", request_id=request_id, call_id=call_id)
+        
+        # Combine uploaded resume + phone interview data
+        final_resume_data = {
+            "personal_info": {
+                "name": request_data.get("full_name", ""),
+                "email": request_data.get("email", ""),
+                "phone": request_data.get("phone_number", "")
+            },
+            "uploaded_resume": request_data.get("resume_data", {}),
+            "interview_data": session.conversation_state,
+            "employment_timeline": session.extracted_fields.get("employment_timeline", []),
+            "adversarial_score": session.adversarial_score,
+            "confidence_score": 0.8,
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        # Use resume builder to create structured resume
+        try:
+            structured_resume = resume_builder.build_resume(final_resume_data)
+            final_resume_data["structured_resume"] = structured_resume
+        except Exception as e:
+            logger.warning("Resume builder failed, using raw data", error=str(e))
+            # Continue with raw data if resume builder fails
+        
+        # Update request status to completed
+        redis_service.update_resume_request(request_id, {
+            "status": "completed",
+            "final_resume_data": final_resume_data,
+            "completed_at": datetime.now().isoformat(),
+            "call_id": call_id
+        })
+        
+        logger.info("Resume generation completed", request_id=request_id)
+        
+    except Exception as e:
+        logger.error("Error completing resume generation", request_id=request_id, error=str(e))
+        redis_service.update_resume_request(request_id, {"status": "failed"})
+
+# Resume Request API Endpoints (for React UI)
+
+@app.post("/api/submit-request")
+async def submit_request(
+    phoneNumber: str = Form(...),
+    fullName: str = Form(...),
+    email: str = Form(""),
+    callTime: str = Form("immediate"),
+    resume: UploadFile = File(None),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """Handle form submission with optional resume upload"""
+    try:
+        # Generate request ID
+        request_id = f"req_{uuid.uuid4().hex[:12]}"
+        
+        # Validate phone number
+        try:
+            parsed_number = phonenumbers.parse(phoneNumber, "US")
+            if not phonenumbers.is_valid_number(parsed_number):
+                raise HTTPException(status_code=400, detail="Invalid phone number")
+            
+            formatted_number = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
+        except phonenumbers.NumberParseException:
+            raise HTTPException(status_code=400, detail="Invalid phone number format")
+        
+        # Process uploaded resume if provided
+        resume_data = None
+        if resume and resume.size > 0:
+            try:
+                file_content = await resume.read()
+                file_type = resume.filename.split('.')[-1] if resume.filename else 'txt'
+                resume_data = resume_analyzer.process_uploaded_file(file_content, file_type)
+                logger.info("Resume processed successfully", request_id=request_id, file_type=file_type)
+            except Exception as e:
+                logger.warning("Resume processing failed", request_id=request_id, error=str(e))
+                # Continue without resume data
+                resume_data = {"error": f"Failed to process resume: {str(e)}"}
+        
+        # Store request in Redis
+        request_data = {
+            "request_id": request_id,
+            "phone_number": formatted_number,
+            "full_name": fullName,
+            "email": email,
+            "call_time": callTime,
+            "resume_data": resume_data,
+            "status": "pending",
+            "created_at": datetime.now().isoformat(),
+            "scheduled_call_time": datetime.now().isoformat()
+        }
+        
+        redis_service.store_resume_request(request_id, request_data)
+        
+        # Schedule phone call (immediate or later)
+        if callTime == "immediate":
+            # Initiate call immediately in background
+            background_tasks.add_task(initiate_phone_call, request_id, formatted_number)
+        
+        logger.info("Resume request submitted", request_id=request_id, phone_number=formatted_number)
+        
+        return {"requestId": request_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error submitting request", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to submit request")
+
+@app.get("/api/request-status/{request_id}")
+async def get_request_status(request_id: str):
+    """Get status of a resume request"""
+    try:
+        request_data = redis_service.get_resume_request(request_id)
+        if not request_data:
+            raise HTTPException(status_code=404, detail="Request not found")
+        
+        return {
+            "status": request_data.get("status", "pending"),
+            "resumeData": request_data.get("final_resume_data") if request_data.get("status") == "completed" else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error getting request status", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to get status")
+
+@app.get("/api/download-resume/{request_id}")
+async def download_resume(request_id: str):
+    """Download generated resume as PDF"""
+    try:
+        request_data = redis_service.get_resume_request(request_id)
+        if not request_data or request_data.get("status") != "completed":
+            raise HTTPException(status_code=404, detail="Resume not ready")
+        
+        # Generate PDF using ResumeBuilder
+        resume_data = request_data.get("final_resume_data")
+        if not resume_data:
+            raise HTTPException(status_code=404, detail="Resume data not found")
+        
+        # Use resume builder to generate PDF
+        pdf_content = resume_builder.generate_pdf(resume_data)
+        
+        # Save to temporary file and return
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(pdf_content)
+            temp_path = temp_file.name
+        
+        return FileResponse(
+            temp_path,
+            media_type="application/pdf",
+            filename=f"resume-{request_id}.pdf"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error downloading resume", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to download resume")
+
+@app.get("/api/user/{phone_number}/requests")
+async def get_user_requests(phone_number: str):
+    """Get all requests for a phone number"""
+    try:
+        # Validate and format phone number
+        try:
+            parsed_number = phonenumbers.parse(phone_number, "US")
+            formatted_number = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
+        except phonenumbers.NumberParseException:
+            formatted_number = phone_number  # Use as-is if parsing fails
+        
+        # Get all requests for this phone number from Redis
+        requests = redis_service.get_user_requests(formatted_number)
+        
+        return {"requests": requests}
+        
+    except Exception as e:
+        logger.error("Error getting user requests", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to get requests")
+
+async def initiate_phone_call(request_id: str, phone_number: str):
+    """Background task to initiate phone call for resume request"""
+    try:
+        # Update status to SMS sent (simulated)
+        redis_service.update_resume_request(request_id, {"status": "sms_sent"})
+        
+        # Wait a bit, then initiate call
+        await asyncio.sleep(10)  # 10 second delay for demo
+        
+        # Generate call ID
+        call_id = f"call_{uuid.uuid4().hex[:12]}"
+        
+        # Create call session linked to resume request
+        session = redis_service.create_call_session(
+            call_id=call_id,
+            phone_number=phone_number,
+            consent_given=True,
+            request_id=request_id  # Link to resume request
+        )
+        
+        # Update request status
+        redis_service.update_resume_request(request_id, {
+            "status": "in_call",
+            "call_id": call_id
+        })
+        
+        # Initiate Twilio call
+        webhook_url = f"{os.getenv('BASE_URL', 'http://localhost:8000')}/api/calls/webhook/{call_id}"
+        
+        try:
+            twilio_call = telephony_service.initiate_call(phone_number, webhook_url)
+            
+            # Update session with Twilio call SID
+            redis_service.update_call_session(call_id, {
+                "twilio_call_sid": twilio_call.sid,
+                "status": "active",
+                "started_at": datetime.now()
+            })
+            
+            logger.info("Phone call initiated for resume request", 
+                       request_id=request_id, call_id=call_id, twilio_sid=twilio_call.sid)
+                       
+        except Exception as e:
+            logger.error("Failed to initiate Twilio call", request_id=request_id, error=str(e))
+            # Update status to failed
+            redis_service.update_resume_request(request_id, {"status": "failed"})
+        
+    except Exception as e:
+        logger.error("Error initiating phone call", request_id=request_id, error=str(e))
+        redis_service.update_resume_request(request_id, {"status": "failed"})
 
 # Health and Monitoring Endpoints
 
@@ -574,6 +838,41 @@ async def get_system_stats():
         "webhook_stats": webhook_service.get_outbox_stats(),
         "observability_summary": observability_service.export_metrics_summary()
     }
+
+# Serve React app for client-side routing
+@app.get("/{path:path}")
+async def serve_react_app(path: str):
+    """Serve React app for all non-API routes"""
+    # Don't serve React for API routes
+    if path.startswith("api/") or path.startswith("health") or path.startswith("metrics"):
+        raise HTTPException(status_code=404, detail="Not found")
+    
+    try:
+        # Try to serve the React build
+        return FileResponse("client/dist/index.html")
+    except FileNotFoundError:
+        # Fallback to basic HTML if React build not found
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>AI Resume Builder</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+        </head>
+        <body>
+            <h1>AI Resume Builder</h1>
+            <p>React build not found. To use the full UI:</p>
+            <ol>
+                <li>cd client</li>
+                <li>npm install</li>
+                <li>npm run build</li>
+            </ol>
+            <p><a href="/docs">API Documentation</a></p>
+            <p><a href="/health">System Health</a></p>
+        </body>
+        </html>
+        """)
 
 if __name__ == "__main__":
     import uvicorn

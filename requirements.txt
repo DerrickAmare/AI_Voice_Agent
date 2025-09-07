@@ -27,3 +27,8 @@ prometheus-client==0.19.0
 
 # Background task processing
 asyncio-mqtt==0.16.1
+
+# Resume parsing dependencies
+PyPDF2==3.0.1
+python-docx==0.8.11
+docx2txt==0.8

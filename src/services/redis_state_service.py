@@ -25,7 +25,7 @@ class CallSession(BaseModel):
     twilio_call_sid: Optional[str] = None
     
     # Conversation state
-    conversation_state: Dict[str, Any] = {}
+    conversation_state: Optional[Dict[str, Any]] = None
     extracted_fields: Dict[str, Any] = {}
     adversarial_score: float = 0.0
     employment_gaps: List[Dict] = []
@@ -38,6 +38,9 @@ class CallSession(BaseModel):
     agent_version: str = "1.0"
     consent_given: bool = False
     retry_count: int = 0
+    
+    # Resume request integration
+    request_id: Optional[str] = None
 
 class OutboxMessage(BaseModel):
     """Message queued for webhook delivery"""
@@ -332,3 +335,101 @@ class RedisStateService:
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             }
+    
+    # Resume Request Management
+    
+    def _resume_request_key(self, request_id: str) -> str:
+        """Generate Redis key for resume request"""
+        return f"RESUME_REQUEST:{request_id}"
+    
+    def _user_requests_key(self, phone_number: str) -> str:
+        """Generate Redis key for user requests list"""
+        phone_hash = self._hash_phone(phone_number)
+        return f"USER_REQUESTS:{phone_hash}"
+    
+    def store_resume_request(self, request_id: str, request_data: Dict[str, Any]) -> bool:
+        """Store resume request data in Redis"""
+        try:
+            key = self._resume_request_key(request_id)
+            self.redis_client.setex(
+                key,
+                self.CALL_SESSION_TTL,  # Same TTL as call sessions
+                json.dumps(request_data, default=str)
+            )
+            
+            # Add to user's request list
+            phone_number = request_data.get("phone_number")
+            if phone_number:
+                user_key = self._user_requests_key(phone_number)
+                self.redis_client.lpush(user_key, request_id)
+                self.redis_client.expire(user_key, self.CALL_SESSION_TTL)
+            
+            self.logger.info("Stored resume request", request_id=request_id)
+            return True
+            
+        except Exception as e:
+            self.logger.error("Failed to store resume request", request_id=request_id, error=str(e))
+            return False
+    
+    def get_resume_request(self, request_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve resume request data from Redis"""
+        try:
+            key = self._resume_request_key(request_id)
+            data = self.redis_client.get(key)
+            
+            if not data:
+                return None
+                
+            return json.loads(data)
+            
+        except Exception as e:
+            self.logger.error("Failed to get resume request", request_id=request_id, error=str(e))
+            return None
+    
+    def update_resume_request(self, request_id: str, updates: Dict[str, Any]) -> bool:
+        """Update resume request with new data"""
+        try:
+            request_data = self.get_resume_request(request_id)
+            if not request_data:
+                self.logger.warning("Resume request not found for update", request_id=request_id)
+                return False
+            
+            # Update fields
+            request_data.update(updates)
+            request_data["updated_at"] = datetime.now().isoformat()
+            
+            # Save back to Redis
+            key = self._resume_request_key(request_id)
+            self.redis_client.setex(
+                key,
+                self.CALL_SESSION_TTL,
+                json.dumps(request_data, default=str)
+            )
+            
+            self.logger.info("Updated resume request", request_id=request_id, updates=list(updates.keys()))
+            return True
+            
+        except Exception as e:
+            self.logger.error("Failed to update resume request", request_id=request_id, error=str(e))
+            return False
+    
+    def get_user_requests(self, phone_number: str) -> List[Dict[str, Any]]:
+        """Get all resume requests for a phone number"""
+        try:
+            user_key = self._user_requests_key(phone_number)
+            request_ids = self.redis_client.lrange(user_key, 0, -1)
+            
+            requests = []
+            for request_id in request_ids:
+                request_data = self.get_resume_request(request_id)
+                if request_data:
+                    requests.append(request_data)
+            
+            # Sort by creation time (newest first)
+            requests.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            
+            return requests
+            
+        except Exception as e:
+            self.logger.error("Failed to get user requests", phone_number=phone_number, error=str(e))
+            return []

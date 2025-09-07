@@ -1,10 +1,26 @@
 """
 Resume Analyzer Agent - Analyzes resume content for gaps and improvements
+Enhanced with file processing capabilities for PDF/DOCX uploads
 """
 
 from typing import Dict, Any, List
 from .base_agent import BaseAgent, AgentResponse
 import logging
+import io
+import json
+
+# File processing imports
+try:
+    import PyPDF2
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+try:
+    import docx
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -233,3 +249,154 @@ Return as a simple list.
             improvements.append("Expand skills section with industry-relevant competencies")
         
         return improvements[:5]  # Return top 5 priorities
+    
+    def process_uploaded_file(self, file_content: bytes, file_type: str) -> Dict[str, Any]:
+        """Process uploaded resume file and return structured analysis"""
+        try:
+            # Extract text from file
+            raw_text = self._extract_text_from_file(file_content, file_type)
+            
+            # Use AI to parse AND analyze in one step
+            structured_data = self._ai_parse_and_analyze(raw_text)
+            return structured_data
+            
+        except Exception as e:
+            logger.error(f"Error processing uploaded file: {e}")
+            raise ValueError(f"Failed to process {file_type} file: {str(e)}")
+    
+    def _extract_text_from_file(self, file_content: bytes, file_type: str) -> str:
+        """Extract text from PDF, DOCX, or TXT files"""
+        file_type = file_type.lower()
+        
+        if file_type == 'pdf':
+            if not PDF_AVAILABLE:
+                raise ValueError("PyPDF2 not installed. Cannot process PDF files.")
+            return self._extract_pdf_text(file_content)
+        elif file_type in ['docx', 'doc']:
+            if not DOCX_AVAILABLE:
+                raise ValueError("python-docx not installed. Cannot process DOCX files.")
+            return self._extract_docx_text(file_content)
+        elif file_type == 'txt':
+            return file_content.decode('utf-8')
+        else:
+            raise ValueError(f"Unsupported file type: {file_type}")
+    
+    def _extract_pdf_text(self, file_content: bytes) -> str:
+        """Extract text from PDF"""
+        try:
+            pdf_file = io.BytesIO(file_content)
+            reader = PyPDF2.PdfReader(pdf_file)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() + "\n"
+            return text.strip()
+        except Exception as e:
+            logger.error(f"Error extracting PDF text: {e}")
+            raise ValueError(f"Failed to extract text from PDF: {str(e)}")
+    
+    def _extract_docx_text(self, file_content: bytes) -> str:
+        """Extract text from DOCX"""
+        try:
+            doc_file = io.BytesIO(file_content)
+            doc = docx.Document(doc_file)
+            text = ""
+            for paragraph in doc.paragraphs:
+                text += paragraph.text + "\n"
+            return text.strip()
+        except Exception as e:
+            logger.error(f"Error extracting DOCX text: {e}")
+            raise ValueError(f"Failed to extract text from DOCX: {str(e)}")
+    
+    def _ai_parse_and_analyze(self, raw_text: str) -> Dict[str, Any]:
+        """Use AI to parse resume text into structured data AND analyze it"""
+        parse_prompt = f"""
+Parse this resume text into structured JSON format and provide analysis:
+
+RESUME TEXT:
+{raw_text}
+
+Return a valid JSON object with this exact structure:
+{{
+    "personal_info": {{
+        "name": "",
+        "email": "",
+        "phone": "",
+        "address": ""
+    }},
+    "work_experience": [
+        {{
+            "company": "",
+            "title": "",
+            "start_date": "",
+            "end_date": "",
+            "responsibilities": []
+        }}
+    ],
+    "education": [
+        {{
+            "institution": "",
+            "degree": "",
+            "graduation_date": ""
+        }}
+    ],
+    "skills": [],
+    "summary": "",
+    "analysis": {{
+        "strengths": [],
+        "gaps": [],
+        "improvements": [],
+        "ats_score": 85
+    }}
+}}
+
+Extract all available information from the resume text and fill in the structure. For missing information, use empty strings or arrays. Ensure the JSON is valid and parseable.
+"""
+        
+        try:
+            response = self.call_openai(parse_prompt)
+            
+            # Try to parse JSON response
+            try:
+                parsed_data = json.loads(response)
+                return parsed_data
+            except json.JSONDecodeError:
+                # If JSON parsing fails, try to extract JSON from response
+                import re
+                json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                if json_match:
+                    parsed_data = json.loads(json_match.group())
+                    return parsed_data
+                else:
+                    # Fallback: return basic structure with raw text
+                    return {
+                        "personal_info": {"name": "", "email": "", "phone": "", "address": ""},
+                        "work_experience": [],
+                        "education": [],
+                        "skills": [],
+                        "summary": "",
+                        "raw_text": raw_text,
+                        "analysis": {
+                            "strengths": ["Resume uploaded successfully"],
+                            "gaps": ["Needs manual review"],
+                            "improvements": ["Review and enhance extracted data"],
+                            "ats_score": 50
+                        }
+                    }
+        except Exception as e:
+            logger.error(f"Error in AI parsing: {e}")
+            # Return basic structure with error info
+            return {
+                "personal_info": {"name": "", "email": "", "phone": "", "address": ""},
+                "work_experience": [],
+                "education": [],
+                "skills": [],
+                "summary": "",
+                "raw_text": raw_text,
+                "analysis": {
+                    "strengths": [],
+                    "gaps": ["AI parsing failed"],
+                    "improvements": ["Manual review required"],
+                    "ats_score": 30
+                },
+                "error": str(e)
+            }
