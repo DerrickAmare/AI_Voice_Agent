@@ -5,7 +5,7 @@ Integrated with Redis-based state management
 
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse
@@ -69,10 +69,11 @@ class TelephonyService:
                 url=webhook_url,
                 method="POST",
                 status_callback=webhook_url + "/status",
+                status_callback_method="POST",
                 status_callback_event=["initiated", "ringing", "answered", "completed"],
                 record=True,
-                timeout=30,
-                machine_detection="Enable"
+                timeout=20,  # Reduced timeout for faster connection
+                # machine_detection disabled for faster connection during development
             )
             
             self.logger.info("Call initiated", call_sid=call.sid, to_number=to_number)
@@ -108,21 +109,42 @@ class TelephonyService:
             return {"error": str(e)}
     
     def generate_twiml_response(self, message: str, gather_input: bool = True, 
-                              timeout: int = 10, action_url: str = None) -> str:
-        """Generate TwiML response for phone conversation"""
+                              timeout: int = 5, action_url: str = None, 
+                              hints: List[str] = None) -> str:
+        """Generate optimized TwiML response for phone conversation"""
         response = VoiceResponse()
         
         if gather_input and action_url:
-            gather = response.gather(
-                input='speech',
-                timeout=timeout,
-                action=action_url,
-                method='POST'
-            )
+            gather_params = {
+                'input': 'speech',
+                'timeout': timeout,
+                'speechTimeout': 'auto',  # Auto-detect speech completion
+                'action': action_url,
+                'method': 'POST',
+                'language': 'en-US'
+            }
+            
+            # Add speech hints for better recognition if provided
+            if hints:
+                gather_params['hints'] = ','.join(hints[:20])  # Limit to 20 hints
+            
+            gather = response.gather(**gather_params)
             gather.say(message, voice='alice', language='en-US')
             
-            # If no input received, try again
-            response.say("I didn't hear anything. Let me try again.", voice='alice')
+            # If no input received, try again with a simpler question
+            response.say("I didn't hear anything. Could you repeat that or say 'yes' or 'no'?", voice='alice')
+            
+            # Add a second gather attempt for better reliability
+            fallback_gather = response.gather(
+                input='speech dtmf',  # Accept both speech and keypad
+                timeout=3,
+                speechTimeout='auto',
+                action=action_url,
+                method='POST',
+                language='en-US'
+            )
+            fallback_gather.say("You can also press any key to continue.", voice='alice')
+            
         else:
             response.say(message, voice='alice', language='en-US')
             if not gather_input:

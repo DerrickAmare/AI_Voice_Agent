@@ -13,7 +13,21 @@ interface CallStatusProps {
 export function CallStatus({ requestId, phoneNumber, onViewDashboard }: CallStatusProps) {
   const { data: requestStatus } = useQuery<any>({
     queryKey: ["/api/request-status", requestId],
-    refetchInterval: 5000, // Check every 5 seconds
+    refetchInterval: (data) => {
+      // Exponential backoff based on status
+      if (!data) return 3000; // Initial fast polling
+      
+      const status = data.status;
+      if (status === "pending" || status === "sms_sent") {
+        return 5000; // Check every 5 seconds for early stages
+      } else if (status === "in_call") {
+        return 10000; // Check every 10 seconds during call
+      } else if (status === "completed" || status === "failed") {
+        return false; // Stop polling when done
+      }
+      return 7500; // Default fallback
+    },
+    staleTime: 0, // Always consider data stale for real-time updates
   });
 
   const handleDownloadPDF = async () => {
@@ -193,9 +207,26 @@ export function CallStatus({ requestId, phoneNumber, onViewDashboard }: CallStat
 
           {requestStatus?.status === "in_call" && (
             <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-blue-800 font-semibold">
+              <p className="text-blue-800 font-semibold mb-2">
                 <Clock className="inline w-4 h-4 mr-2 animate-spin" />
-                Processing in progress! Your resume will be ready shortly.
+                Call in progress to {phoneNumber}
+              </p>
+              <div className="text-sm text-blue-700">
+                <p>• Our AI is conducting your interview</p>
+                <p>• This typically takes 5-10 minutes</p>
+                <p>• Your resume will be generated automatically after the call</p>
+              </div>
+            </div>
+          )}
+
+          {requestStatus?.status === "sms_sent" && (
+            <div className="mt-6 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+              <p className="text-yellow-800 font-semibold">
+                <Clock className="inline w-4 h-4 mr-2 animate-spin" />
+                Preparing to call {phoneNumber}...
+              </p>
+              <p className="text-sm text-yellow-700 mt-1">
+                You should receive a call within the next few minutes.
               </p>
             </div>
           )}

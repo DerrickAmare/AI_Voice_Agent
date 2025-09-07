@@ -140,6 +140,32 @@ export default function Home() {
                 </div>
               </Card>
 
+              {/* Call Preparation Tips */}
+              <Card className="p-6 bg-gradient-to-br from-blue-50 to-green-50 border-blue-200">
+                <h4 className="text-lg font-semibold text-foreground mb-4 flex items-center">
+                  <MessageCircle className="text-blue-600 w-5 h-5 mr-2" />
+                  Best Results Tips
+                </h4>
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <div className="flex items-start space-x-2">
+                    <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                    <p>Speak clearly and give short answers (1-2 sentences)</p>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                    <p>Have job titles and dates ready</p>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                    <p>If silent, say "still thinking" to avoid timeout</p>
+                  </div>
+                  <div className="flex items-start space-x-2">
+                    <div className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                    <p>Call takes 5-10 minutes typically</p>
+                  </div>
+                </div>
+              </Card>
+
               {/* Success Statistics */}
               <Card className="p-6 bg-gradient-to-br from-green-50 to-blue-50 border-green-200">
                 <h4 className="text-lg font-semibold text-foreground mb-4 flex items-center">

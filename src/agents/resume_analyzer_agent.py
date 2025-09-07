@@ -251,18 +251,78 @@ Return as a simple list.
         return improvements[:5]  # Return top 5 priorities
     
     def process_uploaded_file(self, file_content: bytes, file_type: str) -> Dict[str, Any]:
-        """Process uploaded resume file and return structured analysis"""
+        """Process uploaded resume file and return structured analysis with conversation hints"""
         try:
             # Extract text from file
             raw_text = self._extract_text_from_file(file_content, file_type)
             
             # Use AI to parse AND analyze in one step
             structured_data = self._ai_parse_and_analyze(raw_text)
+            
+            # Extract conversation hints for better phone interview
+            hints = self._extract_conversation_hints(structured_data)
+            structured_data["conversation_hints"] = hints
+            
             return structured_data
             
         except Exception as e:
             logger.error(f"Error processing uploaded file: {e}")
             raise ValueError(f"Failed to process {file_type} file: {str(e)}")
+    
+    def _extract_conversation_hints(self, structured_data: Dict[str, Any]) -> Dict[str, List[str]]:
+        """Extract hints from parsed resume to improve phone conversation"""
+        hints = {
+            "companies": [],
+            "titles": [],
+            "skills": [],
+            "date_range": ""
+        }
+        
+        try:
+            # Extract company names
+            work_experience = structured_data.get("work_experience", [])
+            for job in work_experience:
+                if isinstance(job, dict) and job.get("company"):
+                    company = job["company"].strip()
+                    if company and company not in hints["companies"]:
+                        hints["companies"].append(company)
+            
+            # Extract job titles
+            for job in work_experience:
+                if isinstance(job, dict) and job.get("title"):
+                    title = job["title"].strip()
+                    if title and title not in hints["titles"]:
+                        hints["titles"].append(title)
+            
+            # Extract skills
+            skills = structured_data.get("skills", [])
+            if isinstance(skills, list):
+                hints["skills"] = [skill.strip() for skill in skills if skill and skill.strip()][:10]
+            
+            # Determine date range
+            dates = []
+            for job in work_experience:
+                if isinstance(job, dict):
+                    if job.get("start_date"):
+                        try:
+                            year = int(job["start_date"][:4])
+                            dates.append(year)
+                        except (ValueError, TypeError):
+                            pass
+                    if job.get("end_date") and job["end_date"] != "present":
+                        try:
+                            year = int(job["end_date"][:4])
+                            dates.append(year)
+                        except (ValueError, TypeError):
+                            pass
+            
+            if dates:
+                hints["date_range"] = f"{min(dates)}-{max(dates)}"
+            
+        except Exception as e:
+            logger.error(f"Error extracting conversation hints: {e}")
+        
+        return hints
     
     def _extract_text_from_file(self, file_content: bytes, file_type: str) -> str:
         """Extract text from PDF, DOCX, or TXT files"""

@@ -7,7 +7,7 @@ import os
 import uuid
 import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
@@ -215,6 +215,42 @@ async def perform_startup_health_checks():
                healthy_services=[name for name, healthy in checks if healthy],
                demo_mode=demo_mode)
 
+def _generate_speech_hints(conversation_state: Dict[str, Any]) -> List[str]:
+    """Generate context-aware speech hints for better Twilio recognition"""
+    hints = ["yes", "no", "okay", "sure", "work", "job", "company", "employer"]
+    
+    # Add stage-specific hints
+    stage = conversation_state.get("conversation_stage", "greeting")
+    
+    if stage == "work_history":
+        hints.extend([
+            "manager", "supervisor", "technician", "operator", "driver", "clerk",
+            "construction", "manufacturing", "retail", "restaurant", "healthcare",
+            "walmart", "mcdonalds", "target", "amazon", "fedex", "ups",
+            "january", "february", "march", "april", "may", "june",
+            "july", "august", "september", "october", "november", "december",
+            "2020", "2021", "2022", "2023", "2024"
+        ])
+    elif stage == "education":
+        hints.extend([
+            "high school", "college", "university", "degree", "diploma",
+            "bachelor", "associate", "graduate", "graduated"
+        ])
+    elif stage == "skills":
+        hints.extend([
+            "computer", "excel", "microsoft", "forklift", "welding",
+            "customer service", "teamwork", "leadership"
+        ])
+    
+    # Add hints from extracted data
+    next_focus = conversation_state.get("next_question_focus", "")
+    if "date" in next_focus.lower():
+        hints.extend(["year", "month", "started", "ended", "current", "present"])
+    elif "location" in next_focus.lower():
+        hints.extend(["city", "state", "street", "avenue", "road"])
+    
+    return hints[:20]  # Limit to 20 hints for Twilio
+
 async def webhook_processor():
     """Background task to process webhook deliveries"""
     logger.info("Webhook processor started")
@@ -404,18 +440,24 @@ async def handle_twilio_webhook(call_id: str, request: Request, background_tasks
             return PlainTextResponse("OK")
         
         if call_status == "in-progress":
-            # Call connected, start conversation
+            # Call connected, start conversation with proper speech recognition
             response = VoiceResponse()
             
-            # Initial greeting
-            response.say("Hello! I'm calling to learn about your work experience. This call may be recorded for quality purposes. Do you consent to continue?")
-            
-            # Gather consent response
+            # Initial greeting with proper speech settings
             gather = response.gather(
                 input='speech',
                 timeout=10,
-                action=f"/api/calls/webhook/{call_id}/gather"
+                speechTimeout='auto',  # You confirmed this works on your trial
+                action=f"/api/calls/webhook/{call_id}/gather",
+                method='POST',
+                language='en-US'
             )
+            gather.say("Hello! I'm calling to learn about your work experience. This call may be recorded for quality purposes. Do you consent to continue?", 
+                      voice='alice', language='en-US')
+            
+            # Fallback if no input - redirect to same endpoint to try again
+            response.say("I didn't hear anything. Let me try again.", voice='alice')
+            response.redirect(f"/api/calls/webhook/{call_id}")
             
             return PlainTextResponse(str(response), media_type="application/xml")
             
@@ -435,6 +477,37 @@ async def handle_twilio_webhook(call_id: str, request: Request, background_tasks
         logger.error("Error handling Twilio webhook", call_id=call_id, error=str(e))
         return PlainTextResponse("OK")
 
+@app.post("/api/calls/webhook/{call_id}/status")
+async def handle_twilio_status_callback(call_id: str, request: Request, background_tasks: BackgroundTasks):
+    """Handle Twilio status callback for call state changes"""
+    try:
+        form_data = await request.form()
+        call_status = form_data.get("CallStatus")
+        call_sid = form_data.get("CallSid")
+        
+        logger.info("Twilio status callback received", call_id=call_id, status=call_status, call_sid=call_sid)
+        
+        session = redis_service.get_call_session(call_id)
+        if not session:
+            logger.warning("Status callback for unknown call", call_id=call_id)
+            return PlainTextResponse("OK")
+        
+        # Update session status
+        if call_status in ["completed", "failed", "busy", "no-answer"]:
+            redis_service.update_call_session(call_id, {
+                "status": "completed" if call_status == "completed" else "failed",
+                "completed_at": datetime.now()
+            })
+            
+            # Process call completion in background
+            background_tasks.add_task(process_call_completion, call_id, call_status)
+        
+        return PlainTextResponse("OK")
+        
+    except Exception as e:
+        logger.error("Error handling Twilio status callback", call_id=call_id, error=str(e))
+        return PlainTextResponse("OK")
+
 @app.post("/api/calls/webhook/{call_id}/gather")
 async def handle_speech_input(call_id: str, request: Request):
     """Handle speech input from Twilio"""
@@ -447,11 +520,11 @@ async def handle_speech_input(call_id: str, request: Request):
         session = redis_service.get_call_session(call_id)
         if not session:
             response = VoiceResponse()
-            response.say("I'm sorry, there was an error. Goodbye.")
+            response.say("I'm sorry, there was an error. Goodbye.", voice='alice', language='en-US')
             response.hangup()
             return PlainTextResponse(str(response), media_type="application/xml")
         
-        # Process speech with phone agent
+        # Process speech with optimized phone agent
         agent_input = {
             "user_input": speech_result,
             "call_metadata": {
@@ -466,6 +539,7 @@ async def handle_speech_input(call_id: str, request: Request):
         extracted_fields = agent_response.data.get("employment_timeline", [])
         adversarial_score = agent_response.data.get("adversarial_score", 0)
         is_complete = agent_response.data.get("is_complete", False)
+        conversation_state = agent_response.data.get("conversation_state", {})
         
         # Update session with new state
         redis_service.update_call_session(call_id, {
@@ -474,30 +548,69 @@ async def handle_speech_input(call_id: str, request: Request):
             "adversarial_score": adversarial_score
         })
         
-        # Generate TwiML response
+        # Generate proper TwiML response with speech recognition
         response = VoiceResponse()
         
         if is_complete or agent_response.next_action == "complete_call":
-            response.say(agent_response.message + " Thank you for your time. Goodbye!")
+            response.say(agent_response.message + " Thank you for your time. Goodbye!", 
+                        voice='alice', language='en-US')
             response.hangup()
         else:
-            response.say(agent_response.message)
-            
-            # Continue gathering speech
+            # Continue conversation with proper speech settings
             gather = response.gather(
                 input='speech',
                 timeout=10,
-                action=f"/api/calls/webhook/{call_id}/gather"
+                speechTimeout='auto',
+                action=f"/api/calls/webhook/{call_id}/gather",
+                method='POST',
+                language='en-US'
             )
+            gather.say(agent_response.message, voice='alice', language='en-US')
+            
+            # Fallback if no input - ask again
+            response.say("I didn't hear anything. Let me ask that again.", voice='alice')
+            
+            # Second gather attempt
+            gather2 = response.gather(
+                input='speech',
+                timeout=8,
+                speechTimeout='auto',
+                action=f"/api/calls/webhook/{call_id}/gather",
+                method='POST',
+                language='en-US'
+            )
+            gather2.say(agent_response.message, voice='alice', language='en-US')
+            
+            # Final fallback
+            response.say("I'm having trouble hearing you. Thank you for your time. Goodbye.", voice='alice')
+            response.hangup()
         
         return PlainTextResponse(str(response), media_type="application/xml")
         
     except Exception as e:
         logger.error("Error handling speech input", call_id=call_id, error=str(e))
         
+        # Return safe TwiML on any error - always ensure valid response
         response = VoiceResponse()
-        response.say("I'm sorry, there was an error. Goodbye.")
+        response.say("I'm sorry, there was a technical issue. Let me try to continue.", 
+                    voice='alice', language='en-US')
+        
+        # Try to continue with basic question
+        gather = response.gather(
+            input='speech',
+            timeout=8,
+            speechTimeout='auto',
+            action=f"/api/calls/webhook/{call_id}/gather",
+            method='POST',
+            language='en-US'
+        )
+        gather.say("Can you tell me about your work experience?", voice='alice', language='en-US')
+        
+        # Final fallback if still having issues
+        response.say("I'm having technical difficulties. Thank you for your time. Goodbye.", 
+                    voice='alice', language='en-US')
         response.hangup()
+        
         return PlainTextResponse(str(response), media_type="application/xml")
 
 async def process_call_completion(call_id: str, call_status: str):
@@ -640,12 +753,17 @@ async def submit_request(
         
         # Process uploaded resume if provided
         resume_data = None
+        conversation_hints = None
         if resume and resume.size > 0:
             try:
                 file_content = await resume.read()
                 file_type = resume.filename.split('.')[-1] if resume.filename else 'txt'
                 resume_data = resume_analyzer.process_uploaded_file(file_content, file_type)
-                logger.info("Resume processed successfully", request_id=request_id, file_type=file_type)
+                
+                # Extract conversation hints for better phone interview
+                conversation_hints = resume_data.get("conversation_hints")
+                logger.info("Resume processed successfully", request_id=request_id, file_type=file_type, 
+                           has_hints=bool(conversation_hints))
             except Exception as e:
                 logger.warning("Resume processing failed", request_id=request_id, error=str(e))
                 # Continue without resume data
@@ -659,6 +777,7 @@ async def submit_request(
             "email": email,
             "call_time": callTime,
             "resume_data": resume_data,
+            "conversation_hints": conversation_hints,
             "status": "pending",
             "created_at": datetime.now().isoformat(),
             "scheduled_call_time": datetime.now().isoformat()
@@ -763,8 +882,22 @@ async def initiate_phone_call(request_id: str, phone_number: str):
         # Wait a bit, then initiate call
         await asyncio.sleep(10)  # 10 second delay for demo
         
+        # Get request data to access conversation hints
+        request_data = redis_service.get_resume_request(request_id)
+        conversation_hints = request_data.get("conversation_hints") if request_data else None
+        
         # Generate call ID
         call_id = f"call_{uuid.uuid4().hex[:12]}"
+        
+        # Set up conversation hints in phone agent if available
+        if conversation_hints and phone_agent:
+            phone_agent.set_resume_hints(
+                companies=conversation_hints.get("companies", []),
+                titles=conversation_hints.get("titles", []),
+                date_range=conversation_hints.get("date_range", ""),
+                skills=conversation_hints.get("skills", [])
+            )
+            logger.info("Set conversation hints for call", call_id=call_id, hints_available=True)
         
         # Create call session linked to resume request
         session = redis_service.create_call_session(
@@ -811,6 +944,28 @@ async def initiate_phone_call(request_id: str, phone_number: str):
 async def health_check():
     """System health check"""
     return observability_service.get_system_health()
+
+@app.post("/api/test-twiml/{call_id}")
+async def test_twiml_endpoint(call_id: str):
+    """Test endpoint to verify TwiML generation works with proper speech settings"""
+    try:
+        response = VoiceResponse()
+        gather = response.gather(
+            input='speech',
+            timeout=10,
+            speechTimeout='auto',
+            action=f"/api/calls/webhook/{call_id}/gather",
+            method='POST',
+            language='en-US'
+        )
+        gather.say("This is a test. Please say something.", voice='alice', language='en-US')
+        response.say("Test completed. Goodbye.", voice='alice', language='en-US')
+        response.hangup()
+        
+        return PlainTextResponse(str(response), media_type="application/xml")
+    except Exception as e:
+        logger.error("TwiML test failed", error=str(e))
+        return PlainTextResponse("TwiML generation failed", status_code=500)
 
 @app.get("/metrics")
 async def get_metrics():

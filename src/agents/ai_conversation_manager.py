@@ -131,33 +131,44 @@ Begin the conversation now:"""
             )
     
     def process_response(self, call_id: str, user_input: str) -> AgentResponse:
-        """Process user response and generate AI reply"""
+        """Process user response and generate AI reply with single LLM call"""
         try:
             # Add user input to conversation history
             self.conversation_history.append({"role": "user", "content": user_input})
             
-            # Get conversation context
-            context = self.get_conversation_context(call_id)
+            # Get conversation context with hints
+            context = self.get_conversation_context_with_hints(call_id)
             
-            # Build messages for OpenAI
+            # Build messages for OpenAI (keep only last 6 exchanges for speed)
             messages = [
                 {"role": "system", "content": context}
-            ] + self.conversation_history[-10:]  # Keep last 10 exchanges for context
+            ] + self.conversation_history[-6:]
             
-            # Get AI response
-            ai_response = self._get_ai_response(messages)
+            # Get AI response with extraction in one call
+            ai_result = self._get_ai_response_with_extraction(messages, user_input)
+            
+            ai_response = ai_result["assistant_reply"]
+            extracted_data = ai_result["extracted_data"]
+            analysis = ai_result["conversation_analysis"]
             
             # Add AI response to history
             self.conversation_history.append({"role": "assistant", "content": ai_response})
             
-            # Extract and store resume information
-            self.extract_resume_data(call_id, user_input, ai_response)
+            # Process extracted data (only if it's work experience)
+            if analysis.get("is_work_experience", True):
+                self._process_extracted_data(extracted_data)
+            else:
+                logger.info(f"Skipping personal experience data: {user_input[:50]}...")
             
-            # Check if conversation is complete
-            is_complete = self._check_conversation_complete(ai_response)
+            # Determine next action based on analysis
+            is_complete = analysis.get("is_complete", False) or self._check_conversation_complete(ai_response)
             
-            # Detect employment gaps
+            # Update employment gaps detection
             self._detect_employment_gaps()
+            
+            # Determine next question focus for follow-ups
+            next_question_focus = analysis.get("next_question_focus", "")
+            missing_fields = analysis.get("missing_fields", [])
             
             return AgentResponse(
                 success=True,
@@ -169,12 +180,15 @@ Begin the conversation now:"""
                     "is_complete": is_complete,
                     "conversation_state": {
                         "history_length": len(self.conversation_history),
-                        "data_completeness": self._calculate_data_completeness()
+                        "data_completeness": self._calculate_data_completeness(),
+                        "next_question_focus": next_question_focus,
+                        "missing_fields": missing_fields,
+                        "is_work_experience": analysis.get("is_work_experience", True)
                     },
                     "employment_timeline": self._build_employment_timeline()
                 },
                 next_action="complete_call" if is_complete else "continue_conversation",
-                confidence=0.8
+                confidence=0.9
             )
             
         except Exception as e:
@@ -215,31 +229,219 @@ Begin the conversation now:"""
         If you have gathered comprehensive work history, education, and skills, end with: "Thank you! I have all the information I need to build your resume."
         """
     
-    def _get_ai_response(self, messages: List[Dict[str, str]]) -> str:
-        """Get response from OpenAI API"""
+    def get_conversation_context_with_hints(self, call_id: str) -> str:
+        """Get dynamic conversation context with resume hints for better prompting"""
+        gaps_info = ""
+        if self.employment_gaps:
+            gaps_info = f"\nIMPORTANT: Employment gaps to address: {self.employment_gaps}"
+        
+        data_summary = ""
+        if self.extracted_data:
+            data_summary = f"\nData collected so far: {json.dumps(self.extracted_data, indent=2)[:500]}..."
+        
+        # Get hints from uploaded resume if available
+        hints = self._get_resume_hints()
+        hints_info = ""
+        if hints:
+            hints_info = f"\nRESUME HINTS (use to guide questions): {hints}"
+        
+        return f"""You are conducting a phone interview to build a professional resume. Be conversational and ask ONE focused question at a time.
+
+CURRENT FOCUS:
+1. Get complete work history with specific details (employer, job title, dates, location, responsibilities)
+2. Fill employment gaps - be persistent but polite
+3. Collect education and skills information
+4. Keep responses under 2 sentences for phone conversation
+
+CONVERSATION RULES:
+- If user mentions personal/family activities, acknowledge but redirect to work experience
+- For large time gaps, break them into smaller periods
+- Suggest common industries if they're stuck: construction, manufacturing, retail, food service, healthcare
+- Use natural speech: "I see", "That makes sense", "Okay"
+- Ask about missing fields for current job before moving to next job
+
+{gaps_info}
+{data_summary}
+{hints_info}
+
+If you have comprehensive work history, education, and skills, end with: "Thank you! I have all the information I need to build your resume."
+"""
+    
+    def _get_resume_hints(self) -> str:
+        """Get hints from uploaded resume data for better conversation flow"""
+        # This would be populated from the uploaded resume analysis
+        # For now, return empty - will be enhanced when resume upload data is available
+        if hasattr(self, 'resume_hints'):
+            return f"Companies mentioned: {', '.join(self.resume_hints.get('companies', []))}. " \
+                   f"Job titles: {', '.join(self.resume_hints.get('titles', []))}. " \
+                   f"Date range: {self.resume_hints.get('date_range', 'Unknown')}"
+        return ""
+    
+    def set_resume_hints(self, companies: List[str], titles: List[str], date_range: str, skills: List[str]):
+        """Set resume hints from uploaded resume for better conversation flow"""
+        self.resume_hints = {
+            'companies': companies[:5],  # Top 5 companies
+            'titles': titles[:5],        # Top 5 titles
+            'date_range': date_range,
+            'skills': skills[:10]        # Top 10 skills
+        }
+    
+    def _process_extracted_data(self, extracted_data: Dict[str, Any]):
+        """Process extracted data from the single LLM call"""
+        for field, value in extracted_data.items():
+            if value and value != "null" and str(value).strip():
+                if field not in self.extracted_data:
+                    self.extracted_data[field] = []
+                
+                # Avoid duplicates
+                if isinstance(value, list):
+                    for item in value:
+                        if item and item not in [entry.get('value') for entry in self.extracted_data[field]]:
+                            self.extracted_data[field].append({
+                                "value": item,
+                                "timestamp": datetime.now().isoformat(),
+                                "confidence": 0.9
+                            })
+                else:
+                    if value not in [entry.get('value') for entry in self.extracted_data[field]]:
+                        self.extracted_data[field].append({
+                            "value": value,
+                            "timestamp": datetime.now().isoformat(),
+                            "confidence": 0.9
+                        })
+    
+    def _get_ai_response_with_extraction(self, messages: List[Dict[str, str]], user_input: str) -> Dict[str, Any]:
+        """Get response from OpenAI API with structured extraction in one call"""
         try:
+            # Add structured output instruction to the last message
+            extraction_schema = {
+                "type": "object",
+                "properties": {
+                    "assistant_reply": {"type": "string", "description": "Short phone-friendly response (1-2 sentences max)"},
+                    "extracted_data": {
+                        "type": "object",
+                        "properties": {
+                            "employer_name": {"type": "string"},
+                            "job_title": {"type": "string"},
+                            "start_date": {"type": "string"},
+                            "end_date": {"type": "string"},
+                            "job_location": {"type": "string"},
+                            "job_description": {"type": "string"},
+                            "school_name": {"type": "string"},
+                            "degree": {"type": "string"},
+                            "graduation_date": {"type": "string"},
+                            "skills": {"type": "array", "items": {"type": "string"}},
+                            "full_name": {"type": "string"},
+                            "email": {"type": "string"},
+                            "phone_number": {"type": "string"}
+                        }
+                    },
+                    "conversation_analysis": {
+                        "type": "object",
+                        "properties": {
+                            "is_work_experience": {"type": "boolean", "description": "True if discussing professional work, false if personal/family"},
+                            "missing_fields": {"type": "array", "items": {"type": "string"}},
+                            "next_question_focus": {"type": "string"},
+                            "is_complete": {"type": "boolean"}
+                        }
+                    }
+                }
+            }
+
             if client:
-                # Use new OpenAI API (v1.0+)
+                # Use new OpenAI API with structured output
                 response = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=messages,
-                    max_tokens=150,  # Keep responses short for phone
-                    temperature=0.7
+                    model="gpt-4o-mini",  # Faster model
+                    messages=messages + [{
+                        "role": "system", 
+                        "content": f"""RESPOND WITH VALID JSON ONLY. Extract data from user input: "{user_input}"
+
+Return JSON with this exact structure:
+{{
+    "assistant_reply": "Your 1-2 sentence phone response here",
+    "extracted_data": {{
+        "employer_name": "company name if mentioned, null otherwise",
+        "job_title": "job title if mentioned, null otherwise",
+        "start_date": "start date in YYYY or MM/YYYY format if mentioned, null otherwise",
+        "end_date": "end date in YYYY or MM/YYYY format if mentioned, null otherwise",
+        "job_location": "job location if mentioned, null otherwise",
+        "job_description": "brief job duties if mentioned, null otherwise",
+        "school_name": "school name if mentioned, null otherwise",
+        "degree": "degree if mentioned, null otherwise",
+        "graduation_date": "graduation date if mentioned, null otherwise",
+        "skills": ["skill1", "skill2"] or null,
+        "full_name": "full name if mentioned, null otherwise",
+        "email": "email if mentioned, null otherwise",
+        "phone_number": "phone if mentioned, null otherwise"
+    }},
+    "conversation_analysis": {{
+        "is_work_experience": true if discussing paid work/employment, false if personal/family activities,
+        "missing_fields": ["list", "of", "missing", "required", "fields"],
+        "next_question_focus": "what to ask about next",
+        "is_complete": false unless all work history gathered
+    }}
+}}
+
+CRITICAL: Only extract information explicitly stated. Distinguish work experience from personal activities."""
+                    }],
+                    max_tokens=300,  # Increased for JSON response
+                    temperature=0.3  # Lower for consistency
                 )
-                return response.choices[0].message.content.strip()
+                
+                response_text = response.choices[0].message.content.strip()
+                
+                # Parse JSON response
+                import json
+                if response_text.startswith("```json"):
+                    response_text = response_text.replace("```json", "").replace("```", "").strip()
+                
+                try:
+                    parsed_response = json.loads(response_text)
+                    return parsed_response
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON response: {e}, response: {response_text}")
+                    # Fallback response
+                    return {
+                        "assistant_reply": "I'm sorry, could you repeat that?",
+                        "extracted_data": {},
+                        "conversation_analysis": {
+                            "is_work_experience": True,
+                            "missing_fields": [],
+                            "next_question_focus": "clarification",
+                            "is_complete": False
+                        }
+                    }
             else:
-                # Fallback to old API
+                # Fallback to old API (simplified)
                 response = openai.ChatCompletion.create(
-                    model="gpt-4",
+                    model="gpt-3.5-turbo",
                     messages=messages,
-                    max_tokens=150,
+                    max_tokens=75,
                     temperature=0.7
                 )
-                return response.choices[0].message.content.strip()
+                return {
+                    "assistant_reply": response.choices[0].message.content.strip(),
+                    "extracted_data": {},
+                    "conversation_analysis": {
+                        "is_work_experience": True,
+                        "missing_fields": [],
+                        "next_question_focus": "continue",
+                        "is_complete": False
+                    }
+                }
             
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
-            return "I'm sorry, I'm having trouble processing that. Could you please repeat what you said?"
+            return {
+                "assistant_reply": "I'm sorry, I'm having trouble processing that. Could you please repeat what you said?",
+                "extracted_data": {},
+                "conversation_analysis": {
+                    "is_work_experience": True,
+                    "missing_fields": [],
+                    "next_question_focus": "retry",
+                    "is_complete": False
+                }
+            }
     
     def extract_resume_data(self, call_id: str, user_input: str, ai_response: str):
         """Extract structured resume data from conversation using OpenAI"""
