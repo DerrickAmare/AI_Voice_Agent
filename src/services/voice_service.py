@@ -21,20 +21,18 @@ class VoiceService:
             self.recognizer = sr.Recognizer()
             self.microphone = sr.Microphone()
             self.microphone_available = True
-                
-            # Calibrate microphone if available
             self._calibrate_microphone()
         except Exception as e:
             pass
+            
         # Try to initialize TTS
         try:
             import pyttsx3
             self.tts_engine = pyttsx3.init()
             self.tts_available = True
-                
-            # Configure TTS
             self._configure_tts()
         except Exception as e:
+            pass
             
     def _configure_tts(self):
         """Configure text-to-speech settings"""
@@ -44,16 +42,15 @@ class VoiceService:
         try:
             voices = self.tts_engine.getProperty('voices')
             if voices:
-                # Try to find a friendly, professional voice
                 for voice in voices:
                     if 'english' in voice.name.lower() and 'female' in voice.name.lower():
                         self.tts_engine.setProperty('voice', voice.id)
                         break
             
-            # Set speech rate and volume
-            self.tts_engine.setProperty('rate', 180)  # Speed of speech
-            self.tts_engine.setProperty('volume', 0.9)  # Volume level
+            self.tts_engine.setProperty('rate', 180)
+            self.tts_engine.setProperty('volume', 0.9)
         except Exception as e:
+            pass
         
     def _calibrate_microphone(self):
         """Calibrate microphone for ambient noise"""
@@ -61,15 +58,15 @@ class VoiceService:
             return
         
         try:
-            import speech_recognition as sr
             with self.microphone as source:
-                        self.recognizer.adjust_for_ambient_noise(source, duration=2)
-                except Exception as e:
+                self.recognizer.adjust_for_ambient_noise(source, duration=2)
+        except Exception as e:
+            pass
         
     def speak(self, text: str, callback: Optional[Callable] = None):
         """Convert text to speech"""
         if not self.tts_available:
-                if callback:
+            if callback:
                 callback()
             return
         
@@ -78,13 +75,13 @@ class VoiceService:
         
         self.is_speaking = True
         try:
-                self.tts_engine.say(text)
+            self.tts_engine.say(text)
             self.tts_engine.runAndWait()
-            
             if callback:
                 callback()
         except Exception as e:
-            finally:
+            pass
+        finally:
             self.is_speaking = False
     
     def speak_async(self, text: str, callback: Optional[Callable] = None):
@@ -96,29 +93,21 @@ class VoiceService:
     def listen(self, timeout: int = 5, phrase_time_limit: int = 10) -> Optional[str]:
         """Listen for speech input and return transcribed text"""
         if not self.microphone_available:
-                return None
+            return None
         
         try:
-            import speech_recognition as sr
             with self.microphone as source:
-                        audio = self.recognizer.listen(
+                audio = self.recognizer.listen(
                     source, 
                     timeout=timeout, 
                     phrase_time_limit=phrase_time_limit
                 )
             
-                text = self.recognizer.recognize_google(audio)
-                return text.lower().strip()
+            text = self.recognizer.recognize_google(audio)
+            return text.lower().strip()
             
         except Exception as e:
-            if 'sr.' in str(type(e)):
-                # Speech recognition specific errors
-                if 'WaitTimeoutError' in str(type(e)):
-                            elif 'UnknownValueError' in str(type(e)):
-                            elif 'RequestError' in str(type(e)):
-                            else:
-                        else:
-                    return None
+            return None
     
     def listen_async(self, callback: Callable[[Optional[str]], None], 
                     timeout: int = 5, phrase_time_limit: int = 10):
@@ -134,7 +123,7 @@ class VoiceService:
     def start_continuous_listening(self, callback: Callable[[str], None]):
         """Start continuous listening mode"""
         if not self.microphone_available:
-                return
+            return
         
         self.is_listening = True
         
@@ -145,7 +134,7 @@ class VoiceService:
                     if text:
                         callback(text)
                 except Exception as e:
-                                time.sleep(0.1)
+                    time.sleep(0.1)
         
         thread = threading.Thread(target=continuous_listen)
         thread.daemon = True
@@ -157,7 +146,6 @@ class VoiceService:
     
     def is_available(self) -> bool:
         """Check if voice services are available"""
-        # Return True if at least one service (TTS or speech recognition) is available
         return self.tts_available or self.microphone_available
     
     def get_available_voices(self) -> list:
@@ -169,7 +157,7 @@ class VoiceService:
             voices = self.tts_engine.getProperty('voices')
             return [{"id": voice.id, "name": voice.name} for voice in voices] if voices else []
         except Exception as e:
-                return []
+            return []
     
     def set_voice(self, voice_id: str):
         """Set TTS voice by ID"""
@@ -180,4 +168,4 @@ class VoiceService:
             self.tts_engine.setProperty('voice', voice_id)
             return True
         except Exception as e:
-                return False
+            return False

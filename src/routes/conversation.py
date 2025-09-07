@@ -9,9 +9,6 @@ from src.services.conversation_engine import ConversationEngine
 
 router = APIRouter()
 
-# Initialize conversation engine
-conversation_engine = ConversationEngine()
-
 # Global state (in production, use a proper database)
 conversation_sessions = {}
 
@@ -31,7 +28,9 @@ async def start_conversation(request: Dict[str, str]):
     session_id = request["session_id"]
     
     try:
-        # Initialize conversation
+        # Create a new conversation engine for each session
+        conversation_engine = ConversationEngine()
+        conversation_engine.reset()
         response = conversation_engine.start_conversation()
         conversation_sessions[session_id] = {
             "engine": conversation_engine,

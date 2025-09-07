@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
 
 from src.services.agent_service import AgentService
-from src.api.routes.conversation import ConversationRequest
+from src.routes.conversation import ConversationRequest
 
 router = APIRouter()
 

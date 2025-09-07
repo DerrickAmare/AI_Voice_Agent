@@ -12,6 +12,11 @@ class ConversationEngine:
         self.state = ConversationState()
         self.question_templates = self._load_question_templates()
         self.extraction_patterns = self._load_extraction_patterns()
+    def reset(self):
+        """Reset the conversation state"""
+        self.state = ConversationState()
+        self.state.current_section = 'personal_info'
+
     
     def _load_question_templates(self) -> Dict[str, List[str]]:
         """Load question templates for different resume sections"""

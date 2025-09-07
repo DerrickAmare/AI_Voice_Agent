@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import route modules
-from src.api.routes import conversation, resume, voice, agents
+from src.routes import conversation, resume, voice, agents
 
 # Create FastAPI app
 app = FastAPI(title="Voice AI Resume Builder", version="1.0.0")
