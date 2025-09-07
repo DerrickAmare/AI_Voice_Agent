@@ -16,7 +16,7 @@ load_dotenv()
 
 import structlog
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, File, UploadFile, Form
-from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import phonenumbers
@@ -214,6 +214,53 @@ async def perform_startup_health_checks():
     logger.info("Health checks completed", 
                healthy_services=[name for name, healthy in checks if healthy],
                demo_mode=demo_mode)
+
+def _create_twiml_response(twiml_response: VoiceResponse) -> Response:
+    """Create properly formatted TwiML response with correct headers and validation"""
+    try:
+        # Convert TwiML to string
+        twiml_content = str(twiml_response)
+        
+        # Validate XML structure
+        import xml.etree.ElementTree as ET
+        try:
+            ET.fromstring(twiml_content)
+        except ET.ParseError as e:
+            logger.error("Invalid TwiML XML generated", error=str(e), twiml=twiml_content[:200])
+            # Return safe fallback TwiML
+            fallback_response = VoiceResponse()
+            fallback_response.say("I'm sorry, there was a technical issue. Goodbye.", voice='alice', language='en-US')
+            fallback_response.hangup()
+            twiml_content = str(fallback_response)
+        
+        # Ensure proper XML declaration and encoding
+        if not twiml_content.startswith('<?xml'):
+            twiml_content = '<?xml version="1.0" encoding="UTF-8"?>' + twiml_content
+        
+        # Create response with proper headers
+        return Response(
+            content=twiml_content,
+            status_code=200,
+            media_type="application/xml; charset=utf-8",
+            headers={
+                "Content-Type": "application/xml; charset=utf-8",
+                "Cache-Control": "no-cache"
+            }
+        )
+        
+    except Exception as e:
+        logger.error("Error creating TwiML response", error=str(e))
+        # Return minimal safe TwiML on any error
+        safe_twiml = '<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">Technical error. Goodbye.</Say><Hangup /></Response>'
+        return Response(
+            content=safe_twiml,
+            status_code=200,
+            media_type="application/xml; charset=utf-8",
+            headers={
+                "Content-Type": "application/xml; charset=utf-8",
+                "Cache-Control": "no-cache"
+            }
+        )
 
 def _generate_speech_hints(conversation_state: Dict[str, Any]) -> List[str]:
     """Generate context-aware speech hints for better Twilio recognition"""
@@ -425,14 +472,19 @@ async def get_call_status(call_id: str) -> CallStatusResponse:
         extracted_fields=session.extracted_fields
     )
 
-@app.post("/api/calls/webhook/{call_id}")
+@app.api_route("/api/calls/webhook/{call_id}", methods=["GET", "POST"])
 async def handle_twilio_webhook(call_id: str, request: Request, background_tasks: BackgroundTasks):
     """Handle Twilio webhook for call events"""
     try:
-        form_data = await request.form()
-        call_status = form_data.get("CallStatus")
+        # Handle both GET and POST requests
+        if request.method == "POST":
+            form_data = await request.form()
+            call_status = form_data.get("CallStatus")
+        else:
+            # GET request - assume initial call setup
+            call_status = "in-progress"
         
-        logger.info("Twilio webhook received", call_id=call_id, status=call_status)
+        logger.info("Twilio webhook received", call_id=call_id, method=request.method, status=call_status)
         
         session = redis_service.get_call_session(call_id)
         if not session:
@@ -459,7 +511,7 @@ async def handle_twilio_webhook(call_id: str, request: Request, background_tasks
             response.say("I didn't hear anything. Let me try again.", voice='alice')
             response.redirect(f"/api/calls/webhook/{call_id}")
             
-            return PlainTextResponse(str(response), media_type="application/xml")
+            return _create_twiml_response(response)
             
         elif call_status in ["completed", "failed", "busy", "no-answer"]:
             # Call ended
@@ -508,21 +560,27 @@ async def handle_twilio_status_callback(call_id: str, request: Request, backgrou
         logger.error("Error handling Twilio status callback", call_id=call_id, error=str(e))
         return PlainTextResponse("OK")
 
-@app.post("/api/calls/webhook/{call_id}/gather")
+@app.api_route("/api/calls/webhook/{call_id}/gather", methods=["GET", "POST"])
 async def handle_speech_input(call_id: str, request: Request):
     """Handle speech input from Twilio"""
     try:
-        form_data = await request.form()
-        speech_result = form_data.get("SpeechResult", "").strip()
+        # Handle both GET and POST requests
+        if request.method == "POST":
+            form_data = await request.form()
+            speech_result = form_data.get("SpeechResult", "").strip()
+        else:
+            # GET request - no speech result
+            speech_result = ""
         
-        logger.info("Speech input received", call_id=call_id, speech=speech_result[:100])
+        logger.info("Speech input received", call_id=call_id, method=request.method, 
+                   speech=speech_result[:100] if speech_result else "No speech data")
         
         session = redis_service.get_call_session(call_id)
         if not session:
             response = VoiceResponse()
             response.say("I'm sorry, there was an error. Goodbye.", voice='alice', language='en-US')
             response.hangup()
-            return PlainTextResponse(str(response), media_type="application/xml")
+            return _create_twiml_response(response)
         
         # Process speech with optimized phone agent
         agent_input = {
@@ -585,7 +643,7 @@ async def handle_speech_input(call_id: str, request: Request):
             response.say("I'm having trouble hearing you. Thank you for your time. Goodbye.", voice='alice')
             response.hangup()
         
-        return PlainTextResponse(str(response), media_type="application/xml")
+        return _create_twiml_response(response)
         
     except Exception as e:
         logger.error("Error handling speech input", call_id=call_id, error=str(e))
@@ -611,7 +669,7 @@ async def handle_speech_input(call_id: str, request: Request):
                     voice='alice', language='en-US')
         response.hangup()
         
-        return PlainTextResponse(str(response), media_type="application/xml")
+        return _create_twiml_response(response)
 
 async def process_call_completion(call_id: str, call_status: str):
     """Process call completion in background"""
@@ -945,7 +1003,7 @@ async def health_check():
     """System health check"""
     return observability_service.get_system_health()
 
-@app.post("/api/test-twiml/{call_id}")
+@app.api_route("/api/test-twiml/{call_id}", methods=["GET", "POST"])
 async def test_twiml_endpoint(call_id: str):
     """Test endpoint to verify TwiML generation works with proper speech settings"""
     try:
@@ -962,7 +1020,7 @@ async def test_twiml_endpoint(call_id: str):
         response.say("Test completed. Goodbye.", voice='alice', language='en-US')
         response.hangup()
         
-        return PlainTextResponse(str(response), media_type="application/xml")
+        return _create_twiml_response(response)
     except Exception as e:
         logger.error("TwiML test failed", error=str(e))
         return PlainTextResponse("TwiML generation failed", status_code=500)

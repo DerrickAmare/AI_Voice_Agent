@@ -199,6 +199,33 @@ Begin the conversation now:"""
                 confidence=0.1
             )
     
+    def _get_ai_response(self, messages: List[Dict[str, str]]) -> str:
+        """Get response from OpenAI API"""
+        try:
+            if client:
+                # Use new OpenAI API (v1.0+)
+                response = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=messages,
+                    max_tokens=150,  # Keep responses short for phone
+                    temperature=0.7
+                )
+                return response.choices[0].message.content.strip()
+            else:
+                # Fallback to old API
+                import openai
+                response = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=messages,
+                    max_tokens=150,
+                    temperature=0.7
+                )
+                return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            return "I'm sorry, I'm having trouble processing that. Could you please repeat what you said?"
+
     def get_conversation_context(self, call_id: str) -> str:
         """Get dynamic conversation context based on current state"""
         gaps_info = ""
