@@ -91,7 +91,7 @@ Remember: Your goal is to help them create a compelling resume by drawing out th
             )
             
         except Exception as e:
-                return AgentResponse(
+            return AgentResponse(
                 success=False,
                 message="I apologize, but I encountered an error. Let's continue with your resume.",
                 confidence=0.0
@@ -181,4 +181,4 @@ Only include fields where you found clear information. Return empty object {{}} 
                 
             return extracted
         except Exception as e:
-                return {}
+            return {}

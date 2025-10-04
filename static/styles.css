@@ -149,6 +149,13 @@ body {
     border: none;
     border-radius: 25px;
     cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.input-area button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
 }
 
 .voice-controls {
@@ -188,4 +195,44 @@ body {
     0% { transform: scale(1); }
     50% { transform: scale(1.1); }
     100% { transform: scale(1); }
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 768px) {
+    .main-content {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .header h1 {
+        font-size: 2em;
+    }
+    
+    .header p {
+        font-size: 1em;
+    }
+    
+    .card {
+        padding: 20px;
+    }
+    
+    .features {
+        grid-template-columns: 1fr;
+    }
+    
+    .message {
+        max-width: 95%;
+    }
+    
+    .input-area {
+        flex-direction: column;
+    }
+    
+    .input-area input {
+        margin-bottom: 10px;
+    }
+    
+    .voice-controls {
+        justify-content: center;
+    }
 }

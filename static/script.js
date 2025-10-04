@@ -17,6 +17,10 @@ function startNewConversation() {
     .then(data => {
         addMessage(data.response, 'ai');
         lastAIMessage = data.response;
+    })
+    .catch(error => {
+        console.error('Error starting conversation:', error);
+        addMessage('Sorry, there was an error starting the conversation. Please try again.', 'ai');
     });
 }
 
@@ -47,6 +51,10 @@ function uploadResume() {
         } else {
             alert('Error uploading resume: ' + data.message);
         }
+    })
+    .catch(error => {
+        console.error('Error uploading resume:', error);
+        alert('Error uploading resume. Please try again.');
     });
 }
 
@@ -58,6 +66,12 @@ function sendMessage() {
 
     addMessage(message, 'user');
     input.value = '';
+    
+    // Show loading indicator
+    addMessage('Thinking...', 'ai');
+    const sendButton = document.querySelector('.input-area button');
+    sendButton.disabled = true;
+    sendButton.textContent = 'Sending...';
 
     fetch('/api/conversation/continue', {
         method: 'POST',
@@ -69,12 +83,35 @@ function sendMessage() {
     })
     .then(response => response.json())
     .then(data => {
+        // Remove loading message and add actual response
+        const messagesDiv = document.getElementById('messages');
+        const lastMessage = messagesDiv.lastElementChild;
+        if (lastMessage && lastMessage.textContent === 'Thinking...') {
+            messagesDiv.removeChild(lastMessage);
+        }
+        
         addMessage(data.response, 'ai');
         lastAIMessage = data.response;
         
         if (data.is_complete) {
             showResumeOptions(data.resume_data);
         }
+    })
+    .catch(error => {
+        console.error('Error sending message:', error);
+        // Remove loading message
+        const messagesDiv = document.getElementById('messages');
+        const lastMessage = messagesDiv.lastElementChild;
+        if (lastMessage && lastMessage.textContent === 'Thinking...') {
+            messagesDiv.removeChild(lastMessage);
+        }
+        addMessage('Sorry, there was an error processing your message. Please try again.', 'ai');
+    })
+    .finally(() => {
+        // Re-enable send button
+        const sendButton = document.querySelector('.input-area button');
+        sendButton.disabled = false;
+        sendButton.textContent = 'Send';
     });
 }
 
