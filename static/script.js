@@ -20,6 +20,31 @@ function startNewConversation() {
     });
 }
 
+async function processPastedNotes() {
+    const notes = document.getElementById("resumeNotes").value.trim();
+    if (!notes) {
+        alert("Please paste your notes first!");
+        return;
+    }
+
+    // Send notes to your backend
+    const response = await fetch("/process_notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes })
+    });
+
+    const data = await response.json();
+
+    // Display AI response in conversation area
+    const messages = document.getElementById("messages");
+    const aiMsg = document.createElement("div");
+    aiMsg.className = "ai-message";
+    aiMsg.innerHTML = `<strong>AI:</strong> ${data.reply}`;
+    messages.appendChild(aiMsg);
+}
+
+
 function uploadResume() {
     const fileInput = document.getElementById('resumeFile');
     const file = fileInput.files[0];
