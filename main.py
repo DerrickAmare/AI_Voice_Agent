@@ -48,3 +48,10 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.post("/process_notes")
+def process_notes(request: Request):
+
+    notes = data["notes"]
+    # Send notes to your LLM / AI model here
+    response = ai_resume_refiner(notes)
+    return {"reply": response}
